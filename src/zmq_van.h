@@ -79,6 +79,7 @@ class ZMQVan : public Van {
     unsigned seed = static_cast<unsigned>(time(NULL)+port);
     for (int i = 0; i < max_retry+1; ++i) {
       auto address = addr + std::to_string(port);
+      PS_VLOG(1) << "Address is" << address;
       if (zmq_bind(receiver_, address.c_str()) == 0) break;
       if (i == max_retry) {
         port = -1;

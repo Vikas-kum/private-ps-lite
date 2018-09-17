@@ -28,6 +28,60 @@ void Postoffice::InitEnvironment() {
   verbose_ = GetEnv("PS_VERBOSE", 0);
 }
 
+void Postoffice::updateNumWorker(const char* val){
+  int prev_num_worker = num_workers_;
+ // num_workers_ = atoi(val);
+  PS_VLOG(1) << "Process:" << getpid() << " Updated num workers";
+  // init node info.
+  for (int i = prev_num_worker; i < num_workers_; ++i) {
+    int id = WorkerRankToID(i);
+    for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
+                    kWorkerGroup + kScheduler,
+                    kWorkerGroup + kServerGroup + kScheduler}) {
+    //  node_ids_[g].push_back(id);
+      PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
+    }
+  }  
+}
+
+void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std::string& val) {
+  CHECK_EQ(env_var, "DMLC_NUM_WORKER") << " Only updating num_workers is allowed";
+   // if environment variable is DMLC_NUM_WORKER, then update_num_worker
+  // update your own environment variable
+  if(is_scheduler_) {
+    Message req;
+    req.meta.request = true;
+    req.meta.control.cmd = Control::Command::UPDATE_ENV_VAR;
+    req.meta.app_id = 0;
+    SArray<std::string> key{env_var, val};
+    req.AddData(key);
+
+  //  req.meta.customer_id = customer_id;
+    req.meta.timestamp = van_->GetTimestamp();
+    PS_VLOG(1) << "Process:" << getpid() << " In scheduler sending message to others";
+    for (int r : GetNodeIDs(kWorkerGroup + kServerGroup)) {
+      int recver_id = r;
+      
+      req.meta.recver = recver_id;
+      req.meta.timestamp = van_->GetTimestamp();
+      PS_VLOG(1)<< "Process:" << getpid() << " In scheduler sending message to receiver r:" << recver_id;
+      CHECK_GT(van_->Send(req), 0);
+    }
+    // TODO wait 
+    std::unique_lock<std::mutex> ulk(start_mu_);
+    update_env_cond_.wait(ulk, [this] {
+      update_resp_recvd++;
+      return update_resp_recvd >= update_req_sent;
+    });
+  }
+  // update my own environment variable    
+  updateNumWorker(val.c_str()); 
+}
+
+void Postoffice::notifyUpdateEnvCondVar() {
+  update_env_cond_.notify_all();
+}
+
 void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier) {
   start_mu_.lock();
   if (init_stage_ == 0) {
@@ -38,6 +92,8 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     } else {
       dmlc::InitLogging("ps-lite\0");
     }
+    PS_VLOG(1) << " Process: " << getpid() << " in PS Start() init stage 0";
+
 
     // init node info.
     for (int i = 0; i < num_workers_; ++i) {
@@ -46,6 +102,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
                     kWorkerGroup + kScheduler,
                     kWorkerGroup + kServerGroup + kScheduler}) {
         node_ids_[g].push_back(id);
+        PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
       }
     }
 
@@ -55,17 +112,20 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
                     kServerGroup + kScheduler,
                     kWorkerGroup + kServerGroup + kScheduler}) {
         node_ids_[g].push_back(id);
+        PS_VLOG(1) << "Process:" << getpid() << " pushed server id: " << id << " to group :" << g;
       }
     }
 
     for (int g : {kScheduler, kScheduler + kServerGroup + kWorkerGroup,
                   kScheduler + kWorkerGroup, kScheduler + kServerGroup}) {
       node_ids_[g].push_back(kScheduler);
+      PS_VLOG(1) << "Process:" << getpid() << " pushed scheduler id: " << kScheduler << " to group :" << g;
+
     }
     init_stage_++;
   }
   start_mu_.unlock();
-
+  PS_VLOG(1) << " Process:" << getpid() << " Starting van_ with customerID:"<< customer_id;
   // start van
   van_->Start(customer_id);
 
@@ -76,8 +136,12 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     init_stage_++;
   }
   start_mu_.unlock();
+  PS_VLOG(1) << "Process:" << getpid() << " do barrier is: " << do_barrier; 
+
   // do a barrier here
-  if (do_barrier) Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  if (do_barrier) {
+    Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
+  }
 }
 
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
@@ -107,6 +171,8 @@ void Postoffice::AddCustomer(Customer* customer) {
   customers_[app_id].insert(std::make_pair(customer_id, customer));
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   barrier_done_[app_id].insert(std::make_pair(customer_id, false));
+  PS_VLOG(1) << " Process:" << getpid() << " inserted in customers and barrier map:"
+  << " appid:"<< app_id << " customer_id:" << customer_id; 
 }
 
 
@@ -118,6 +184,8 @@ void Postoffice::RemoveCustomer(Customer* customer) {
   if (customers_[app_id].empty()) {
     customers_.erase(app_id);
   }
+  PS_VLOG(1)<< " Process:" << getpid() << " removed custId:" << customer_id 
+  << " from appId:"<< app_id;  
 }
 
 
@@ -150,6 +218,8 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   }
 
   std::unique_lock<std::mutex> ulk(barrier_mu_);
+  PS_VLOG(1) << "Process:" << getpid() << " Barrier called for cust: " <<customer_id
+  << " node_group:" << node_group << " My node role:" << role;
   barrier_done_[0][customer_id] = false;
   Message req;
   req.meta.recver = kScheduler;

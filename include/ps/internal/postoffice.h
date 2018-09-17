@@ -161,11 +161,19 @@ class Postoffice {
    */
   std::vector<int> GetDeadNodes(int t = 60);
 
+  /*
+   update variables in memory which corresponds to environment variables
+   // currently supported num_worker, num_server, num_scheduler
+  */
+  void updateEnvironmentVariable(const std::string& env_var, const std::string& val);
+  void notifyUpdateEnvCondVar();
+
  private:
   Postoffice();
   ~Postoffice() { delete van_; }
 
   void InitEnvironment();
+  void updateNumWorker(const char* val);
   Van* van_;
   mutable std::mutex mu_;
   // app_id -> (customer_id -> customer pointer)
@@ -179,6 +187,8 @@ class Postoffice {
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
+  std::condition_variable update_env_cond_;
+  std::atomic_int update_req_sent, update_resp_recvd;
   std::mutex heartbeat_mu_;
   std::mutex start_mu_;
   int init_stage_ = 0;

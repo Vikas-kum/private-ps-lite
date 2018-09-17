@@ -34,11 +34,39 @@ void Van::ProcessTerminateCommand() {
   ready_ = false;
 }
 
+void Van::ProcessUpdateEnvVariable(Message* msg){
+  //TODO Vikas
+  if(msg->meta.request){
+    // call Update EnvVariable
+    std::string env_var = std::string(((msg->data)[0]).data());
+    std::string val = std::string(((msg->data)[1]).data());
+    PS_VLOG(1) << "Pid:" << getpid() << " ProcessUpdate Got env_var:" << env_var <<
+    " value: "<< val ; 
+    Postoffice::Get()->updateEnvironmentVariable(env_var, val);
+    // Send Ack Msg Back to scheduler
+    Message update_env_ack;
+    update_env_ack.meta.recver = kScheduler;
+    update_env_ack.meta.control.cmd = Control::ACK;
+    update_env_ack.meta.timestamp = timestamp_++;
+    update_env_ack.meta.request = false;
+    PS_VLOG(1) << "Process:" << getpid() << " Seding back ack to scheduler";
+    // send back ack
+    Send(update_env_ack);
+  } else {
+    CHECK_EQ(my_node().role, kScheduler ) << " UpdateEnv Response received is expected on scheduler. My role is:" << my_node().role;
+    // TODO notify the thread waiting on cond variable
+    PS_VLOG(1) << "Process:" << getpid() << " Notifying Scheduler for repsonse";
+    Postoffice::Get()->notifyUpdateEnvCondVar();   
+  }
+    
+  // else
+}
 void Van::ProcessAddNodeCommandAtScheduler(
         Message* msg, Meta* nodes, Meta* recovery_nodes) {
   recovery_nodes->control.cmd = Control::ADD_NODE;
   time_t t = time(NULL);
   size_t num_nodes = Postoffice::Get()->num_servers() + Postoffice::Get()->num_workers();
+  PS_VLOG(1) << "PID:" << getpid() << " num_nodes:" << num_nodes; 
   if (nodes->control.node.size() == num_nodes) {
     // sort the nodes according their ip and port,
     std::sort(nodes->control.node.begin(), nodes->control.node.end(),
@@ -58,13 +86,15 @@ void Van::ProcessAddNodeCommandAtScheduler(
         Connect(node);
         Postoffice::Get()->UpdateHeartbeat(node.id, t);
         connected_nodes_[node_host_ip] = id;
-      } else {
+      } // TODO Vikas else if node.id is not empty is new_node=false
+      else {
         int id = node.role == Node::SERVER ?
                  Postoffice::ServerRankToID(num_servers_) :
                  Postoffice::WorkerRankToID(num_workers_);
         shared_node_mapping_[id] = connected_nodes_[node_host_ip];
         node.id = connected_nodes_[node_host_ip];
       }
+      // TODO Vikas if is_new_node, then execute, check 
       if (node.role == Node::SERVER) num_servers_++;
       if (node.role == Node::WORKER) num_workers_++;
     }
@@ -180,7 +210,8 @@ void Van::ProcessBarrierCommand(Message* msg) {
     }
     int group = ctrl.barrier_group;
     ++barrier_count_[group];
-    PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group];
+    PS_VLOG(1) << "Barrier count for " << group << " : " << barrier_count_[group] << " total required:"
+    << static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size());
     if (barrier_count_[group] ==
         static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
       barrier_count_[group] = 0;
@@ -231,7 +262,10 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
       if (connected_nodes_.find(addr_str) == connected_nodes_.end()) {
         Connect(node);
         connected_nodes_[addr_str] = node.id;
+      } else {
+        //is new_node = false
       }
+      // check how to increment below 2
       if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
       if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
     }
@@ -276,6 +310,7 @@ void Van::Start(int customer_id) {
       if (pstr) port = atoi(pstr);
       CHECK(!ip.empty()) << "failed to get ip";
       CHECK(port) << "failed to get a port";
+      PS_VLOG(1) << "Role is " <<  role << " port is:"<<port;
       my_node_.hostname = ip;
       my_node_.role = role;
       my_node_.port = port;
@@ -287,11 +322,13 @@ void Van::Start(int customer_id) {
 
     // bind.
     my_node_.port = Bind(my_node_, is_scheduler_ ? 0 : 40);
-    PS_VLOG(1) << "Bind to " << my_node_.DebugString();
+    PS_VLOG(1) <<"PId:" << getpid() << " Bind to " << my_node_.DebugString();
     CHECK_NE(my_node_.port, -1) << "bind failed";
 
     // connect to the scheduler
     Connect(scheduler_);
+    PS_VLOG(1) <<"PId:" << getpid() << " Coonected to scheduler";
+
 
     // for debug use
     if (Environment::Get()->find("PS_DROP_MSG")) {
@@ -314,6 +351,8 @@ void Van::Start(int customer_id) {
     msg.meta.control.node.push_back(customer_specific_node);
     msg.meta.timestamp = timestamp_++;
     Send(msg);
+    PS_VLOG(1) <<"PId:" << getpid() << " sent add node to scheduler";
+
   }
 
   // wait until ready
@@ -383,6 +422,7 @@ void Van::Receiving() {
   while (true) {
     Message msg;
     int recv_bytes = RecvMsg(&msg);
+    PS_VLOG(1) << "Process:"<<getpid() << " received message:" << msg.DebugString(); 
     // For debug, drop received message
     if (ready_.load() && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;
@@ -394,7 +434,7 @@ void Van::Receiving() {
 
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    if (Postoffice::Get()->verbose() >= 2) {
+    if (Postoffice::Get()->verbose() >= 1) {
       PS_VLOG(2) << msg.DebugString();
     }
     // duplicated message

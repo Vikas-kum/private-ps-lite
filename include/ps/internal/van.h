@@ -49,6 +49,8 @@ class Van {
      */
     virtual void Start(int customer_id);
 
+    virtual void ProcessUpdateEnvVariable(Message* msg);
+
     /**
      * \brief send a message, It is thread-safe
      * \return the number of bytes sent. -1 if failed
