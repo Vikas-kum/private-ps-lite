@@ -60,6 +60,7 @@ class ZMQVan : public Van {
       CHECK_EQ(zmq_close(it.second), 0);
     }
     senders_.clear();
+    senders_ip_port_.clear();
     zmq_ctx_destroy(context_);
     context_ = nullptr;
   }
@@ -79,6 +80,7 @@ class ZMQVan : public Van {
     unsigned seed = static_cast<unsigned>(time(NULL)+port);
     for (int i = 0; i < max_retry+1; ++i) {
       auto address = addr + std::to_string(port);
+      PS_VLOG(1) << "Address is" << address;
       if (zmq_bind(receiver_, address.c_str()) == 0) break;
       if (i == max_retry) {
         port = -1;
@@ -120,6 +122,37 @@ class ZMQVan : public Van {
       LOG(FATAL) <<  "connect to " + addr + " failed: " + zmq_strerror(errno);
     }
     senders_[id] = sender;
+    senders_ip_port_.insert({node.hostname, std::pair<int,int>(id, node.port)});
+  }
+
+  void DropSender(const std::unordered_set<int>& ids) override {
+    // find hostname in sender_ip_port and erase the entry which has node id in ids
+    auto it = senders_ip_port_.begin();
+    while(it != senders_ip_port_.end()){
+      // find if ids contains this entry's node id
+      auto itr = ids.find(it->second.first);
+
+      if(itr != ids.end()){
+        // this entry needs to be dropped from senders_ip_port, as it is in ids
+        // removing it from senders_ip_port
+        PS_VLOG(1) << "Proc:" << getpid() << " Dropping sender:" << it->first << " with port:" << it->second.second << " node id:" << it->second.first;
+        it = senders_ip_port_.erase(it);
+      } else {
+        ++it;
+      }    
+    }
+    for(auto id : ids){
+      auto it = senders_.find(id);
+      if(it != senders_.end()){
+         PS_VLOG(1) << "Proc:" << getpid() << " Dropping senderid:" << id; 
+         senders_.erase(it);
+        // TODO do we need to close socket connection to sender explicitly or is it RAII ??
+      }
+    } 
+  }
+  
+  bool IsSenderIdValid(int sender_id) override {
+    return senders_.find(sender_id) != senders_.end();
   }
 
   int SendMsg(const Message& msg) override {
@@ -244,6 +277,8 @@ class ZMQVan : public Van {
    * \brief node_id to the socket for sending data to this node
    */
   std::unordered_map<int, void*> senders_;
+    // 'ip' - 'port', 'id'
+  std::unordered_multimap<std::string, std::pair<int,int> > senders_ip_port_;
   std::mutex mu_;
   void *receiver_ = nullptr;
 };

@@ -11,6 +11,7 @@
 #include <memory>
 #include <atomic>
 #include <ctime>
+#include <set>
 #include <unordered_set>
 #include "ps/base.h"
 #include "ps/internal/message.h"
@@ -56,12 +57,27 @@ class Van {
     int Send(const Message &msg);
 
     /**
+     * \brief This method takes care of all the cleanup needed when some node id is removed
+     */
+    void DropSenderHosts(const std::unordered_set<int>& drop_senders);
+
+    /**
+     * \brief This method gets set of NodeIds corresponding to given hostIps
+     */
+    std::unordered_set<int> GetNodeIdSet(const std::unordered_set<std::string>& senders);
+
+    /**
      * \brief return my node
      */
     inline const Node &my_node() const {
       CHECK(ready_) << "call Start() first";
       return my_node_;
     }
+
+    /**
+     * This returns total number of workers seen so far by van, this is always increasing.
+     */
+    int TotalWorkerSeen() { return num_workers_; }
 
     /**
      * \brief stop van
@@ -78,6 +94,8 @@ class Van {
      * \brief whether it is ready for sending. thread safe
      */
     inline bool IsReady() { return ready_; }
+
+    int GetMyRank();
 
  protected:
     /**
@@ -105,6 +123,19 @@ class Van {
      */
     virtual int SendMsg(const Message &msg) = 0;
 
+    virtual void DropSender(const std::unordered_set<int>& ids) = 0;
+
+    /**
+     * \brief this checks if message sender is valid registered sender.
+     */
+    virtual bool IsSenderIdValid(int sender_id) = 0;
+
+    /**
+     * \brief This will send response control message to given group, and only send to receivers
+     * whose id less than max_receiver_id 
+     */
+    void SendResponseToGroup(int group, int max_receiver_id, int custId, int appId, Control::Command c);
+
     /**
      * \brief pack meta into a string
      */
@@ -115,8 +146,12 @@ class Van {
      */
     void UnpackMeta(const char *meta_buf, int buf_size, Meta *meta);
 
+    void RemoveNodeId(const std::unordered_set<int>& removed_node_ids);
+
     Node scheduler_;
     Node my_node_;
+    std::set<int> worker_node_;
+    std::set<int> server_node_;
     bool is_scheduler_;
     std::mutex start_mu_;
 
@@ -150,6 +185,7 @@ class Van {
     int drop_rate_ = 0;
     std::atomic<int> timestamp_{0};
     int init_stage = 0;
+    int is_scheduler_added = 0;
 
     /**
      * \brief processing logic of AddNode message for scheduler
@@ -169,7 +205,7 @@ class Van {
     /**
      * \brief processing logic of Barrier message (run on each node)
      */
-    void ProcessBarrierCommand(Message* msg);
+    void ProcessBarrierCommand(Message* msg, Meta* nodes);
 
     /**
      * \brief processing logic of AddNode message (run on each node)
@@ -180,6 +216,11 @@ class Van {
      * \brief processing logic of Data message
      */
     void ProcessDataMsg(Message* msg);
+
+    /**
+     * \brief processing logic of updating env variable
+     */
+    virtual void ProcessUpdateEnvVariable(Message* msg, Meta* nodes);
 
     /**
      * \brief called by ProcessAddNodeCommand, in scheduler it assigns an id to the
