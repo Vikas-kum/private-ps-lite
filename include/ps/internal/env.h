@@ -48,6 +48,10 @@ class Environment {
     return kvs.find(key) == kvs.end() ? getenv(k) : kvs[key].c_str();
   }
 
+  const std::unordered_map<std::string, std::string>& getKeyValue() const{
+    return kvs;
+  }
+
  private:
   explicit Environment(const std::unordered_map<std::string, std::string>* envs) {
     if (envs) kvs = *envs;

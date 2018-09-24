@@ -107,7 +107,7 @@ struct Control {
   std::string DebugString() const {
     if (empty()) return "";
     std::vector<std::string> cmds = {
-      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT"};
+      "EMPTY", "TERMINATE", "ADD_NODE", "BARRIER", "ACK", "HEARTBEAT", "UPDATE_ENV_VAR", "MEMBERSHIP_CHANGE_BARRIER"};
     std::stringstream ss;
     ss << "cmd=" << cmds[cmd];
     if (node.size()) {
@@ -115,12 +115,12 @@ struct Control {
       for (const Node& n : node) ss << " " << n.DebugString();
       ss << " }";
     }
-    if (cmd == BARRIER) ss << ", barrier_group=" << barrier_group;
+    if (cmd == BARRIER || cmd == MEMBERSHIP_CHANGE_BARRIER) ss << ", barrier_group=" << barrier_group;
     if (cmd == ACK) ss << ", msg_sig=" << msg_sig;
     return ss.str();
   }
   /** \brief all commands */
-  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, UPDATE_ENV_VAR};
+  enum Command { EMPTY, TERMINATE, ADD_NODE, BARRIER, ACK, HEARTBEAT, UPDATE_ENV_VAR, MEMBERSHIP_CHANGE_BARRIER};
   /** \brief the command */
   Command cmd;
   /** \brief node infos */

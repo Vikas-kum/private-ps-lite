@@ -107,6 +107,9 @@ class Van {
      */
     virtual int SendMsg(const Message &msg) = 0;
 
+    void SendResponseToGroup(int group, int max_receiver_id, int custId, int appId, Control::Command c);
+
+
     /**
      * \brief pack meta into a string
      */
@@ -152,6 +155,7 @@ class Van {
     int drop_rate_ = 0;
     std::atomic<int> timestamp_{0};
     int init_stage = 0;
+    int is_scheduler_added = 0;
 
     /**
      * \brief processing logic of AddNode message for scheduler

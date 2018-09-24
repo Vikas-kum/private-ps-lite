@@ -10,9 +10,12 @@
 #include "ps/internal/env.h"
 #include "ps/internal/customer.h"
 #include "ps/internal/van.h"
+#include "ps/internal/elastic_training.h"
+
 namespace ps {
 /**
  * \brief the center of the system
+ * 
  */
 class Postoffice {
  public:
@@ -120,6 +123,11 @@ class Postoffice {
   int num_workers() const { return num_workers_; }
   /** \brief Returns the number of server nodes */
   int num_servers() const { return num_servers_; }
+
+  std::shared_ptr<ETNodeManager> et_node_manager() const {
+    return et_node_manager_;
+  }
+
   /** \brief Returns the rank of this node in its group
    *
    * Each worker will have a unique rank within [0, NumWorkers()). So are
@@ -136,11 +144,17 @@ class Postoffice {
   int verbose() const { return verbose_; }
   /** \brief Return whether this node is a recovery node */
   bool is_recovery() const { return van_->my_node().is_recovery; }
+
+  int is_new_worker() const {
+    return is_new_worker_;
+  }
   /**
    * \brief barrier
    * \param node_id the barrier group id
    */
-  void Barrier(int customer_id, int node_group);
+  void Barrier(int customer_id, int node_group, bool is_membership_change_barrier=false, const std::vector<std::pair<std::string, std::string> >
+                              & data={});
+
   /**
    * \brief process a control message, called by van
    * \param the received message
@@ -166,7 +180,7 @@ class Postoffice {
    // currently supported num_worker, num_server, num_scheduler
   */
   void updateEnvironmentVariable(const std::string& env_var, const std::string& val);
-  void notifyUpdateEnvCondVar();
+  void notifyUpdateEnvReceived();
 
  private:
   Postoffice();
@@ -174,6 +188,7 @@ class Postoffice {
 
   void InitEnvironment();
   void updateNumWorker(const char* val);
+
   Van* van_;
   mutable std::mutex mu_;
   // app_id -> (customer_id -> customer pointer)
@@ -181,14 +196,13 @@ class Postoffice {
   std::unordered_map<int, std::vector<int>> node_ids_;
   std::mutex server_key_ranges_mu_;
   std::vector<Range> server_key_ranges_;
-  bool is_worker_, is_server_, is_scheduler_;
+  bool is_worker_, is_server_, is_scheduler_, is_new_worker_;
   int num_servers_, num_workers_;
   std::unordered_map<int, std::unordered_map<int, bool> > barrier_done_;
   int verbose_;
   std::mutex barrier_mu_;
   std::condition_variable barrier_cond_;
-  std::condition_variable update_env_cond_;
-  std::atomic_int update_req_sent, update_resp_recvd;
+  std::atomic_int update_req_sent;
   std::mutex heartbeat_mu_;
   std::mutex start_mu_;
   int init_stage_ = 0;
@@ -196,6 +210,8 @@ class Postoffice {
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */
   std::shared_ptr<Environment> env_ref_;
+ // ETNodeManager et_node_manager_;
+  std::shared_ptr<ETNodeManager> et_node_manager_;
   time_t start_time_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };

@@ -7,6 +7,7 @@
 #include "ps/internal/postoffice.h"
 #include "ps/internal/message.h"
 #include "ps/base.h"
+#include "elastic_training.cc"
 
 namespace ps {
 Postoffice::Postoffice() {
@@ -26,11 +27,12 @@ void Postoffice::InitEnvironment() {
   is_server_ = role == "server";
   is_scheduler_ = role == "scheduler";
   verbose_ = GetEnv("PS_VERBOSE", 0);
+  is_new_worker_ = GetEnv("NEW_WORKER", 0);
 }
 
 void Postoffice::updateNumWorker(const char* val){
   int prev_num_worker = num_workers_;
- // num_workers_ = atoi(val);
+  num_workers_ = atoi(val);
   PS_VLOG(1) << "Process:" << getpid() << " Updated num workers";
   // init node info.
   for (int i = prev_num_worker; i < num_workers_; ++i) {
@@ -38,7 +40,7 @@ void Postoffice::updateNumWorker(const char* val){
     for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
                     kWorkerGroup + kScheduler,
                     kWorkerGroup + kServerGroup + kScheduler}) {
-    //  node_ids_[g].push_back(id);
+      node_ids_[g].push_back(id);
       PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
     }
   }  
@@ -53,11 +55,12 @@ void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std
     req.meta.request = true;
     req.meta.control.cmd = Control::Command::UPDATE_ENV_VAR;
     req.meta.app_id = 0;
-    SArray<std::string> key{env_var, val};
+    SArray<std::string> key {env_var,val};
     req.AddData(key);
 
   //  req.meta.customer_id = customer_id;
     req.meta.timestamp = van_->GetTimestamp();
+    update_req_sent = 0;
     PS_VLOG(1) << "Process:" << getpid() << " In scheduler sending message to others";
     for (int r : GetNodeIDs(kWorkerGroup + kServerGroup)) {
       int recver_id = r;
@@ -66,20 +69,19 @@ void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std
       req.meta.timestamp = van_->GetTimestamp();
       PS_VLOG(1)<< "Process:" << getpid() << " In scheduler sending message to receiver r:" << recver_id;
       CHECK_GT(van_->Send(req), 0);
+      update_req_sent++;
     }
-    // TODO wait 
-    std::unique_lock<std::mutex> ulk(start_mu_);
-    update_env_cond_.wait(ulk, [this] {
-      update_resp_recvd++;
-      return update_resp_recvd >= update_req_sent;
-    });
   }
   // update my own environment variable    
   updateNumWorker(val.c_str()); 
 }
 
-void Postoffice::notifyUpdateEnvCondVar() {
-  update_env_cond_.notify_all();
+void Postoffice::notifyUpdateEnvReceived() {
+  --update_req_sent;
+  if(update_req_sent <= 0){
+    PS_VLOG(1) << "PId:" <<getpid()<<" Invoking UpdateEnvSuccessCb";
+    et_node_manager_->invokeSuccessResponseCallback();
+  }
 }
 
 void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier) {
@@ -137,11 +139,23 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
   }
   start_mu_.unlock();
   PS_VLOG(1) << "Process:" << getpid() << " do barrier is: " << do_barrier; 
-
+  if(is_scheduler_){
+    const char* instance_pool = NULL;
+    instance_pool = CHECK_NOTNULL(Environment::Get()->find("INSTANCE_POOL"));
+    if(strcmp(instance_pool, "DEFAULT") == 0) {
+      et_node_manager_ = std::make_shared<ETDefaultNodeManager>();
+    } else {
+      PS_VLOG(1) << "FATAL unknown instance pool";
+      et_node_manager_ = nullptr;
+    }
+  } else {
+    et_node_manager_ = nullptr;
+  }
   // do a barrier here
   if (do_barrier) {
     Barrier(customer_id, kWorkerGroup + kServerGroup + kScheduler);
   }
+
 }
 
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
@@ -206,7 +220,8 @@ Customer* Postoffice::GetCustomer(int app_id, int customer_id, int timeout) cons
   return obj;
 }
 
-void Postoffice::Barrier(int customer_id, int node_group) {
+void Postoffice::Barrier(int customer_id, int node_group, bool is_membership_change_barrier, const std::vector<std::pair<std::string, std::string> >
+                              & data) {
   if (GetNodeIDs(node_group).size() <= 1) return;
   auto role = van_->my_node().role;
   if (role == Node::SCHEDULER) {
@@ -220,15 +235,38 @@ void Postoffice::Barrier(int customer_id, int node_group) {
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   PS_VLOG(1) << "Process:" << getpid() << " Barrier called for cust: " <<customer_id
   << " node_group:" << node_group << " My node role:" << role;
+  if(is_new_worker_){
+  PS_VLOG(1) << "Slept in barrier for new worker";
+  sleep(100000);
+  PS_VLOG(1) << " Woke up";
+  }
   barrier_done_[0][customer_id] = false;
   Message req;
   req.meta.recver = kScheduler;
   req.meta.request = true;
-  req.meta.control.cmd = Control::BARRIER;
+  if(is_membership_change_barrier) {
+    PS_VLOG(1) << "Process:" << getpid() << " MCBarrier called for cust: " <<customer_id
+  << " node_group:" << node_group << " My node role:" << role;
+    req.meta.control.cmd = Control::Command::MEMBERSHIP_CHANGE_BARRIER;
+    if(data.size() > 0 ){
+      for(auto entry : data){
+        PS_VLOG(1) << " MCBarrier data " << entry.first << " " << entry.second; 
+
+        SArray<std::string> key {entry.first, entry.second};
+        req.AddData(key);
+      }
+    }
+    req.meta.sender = van_->my_node().id;
+  } else {
+    req.meta.control.cmd = Control::BARRIER;
+  }
+
   req.meta.app_id = 0;
   req.meta.customer_id = customer_id;
   req.meta.control.barrier_group = node_group;
   req.meta.timestamp = van_->GetTimestamp();
+  PS_VLOG(1) << " Process:" << getpid() << " Sending: " << req.DebugString();
+
   CHECK_GT(van_->Send(req), 0);
   barrier_cond_.wait(ulk, [this, customer_id] {
       return barrier_done_[0][customer_id];
@@ -251,7 +289,7 @@ const std::vector<Range>& Postoffice::GetServerKeyRanges() {
 void Postoffice::Manage(const Message& recv) {
   CHECK(!recv.meta.control.empty());
   const auto& ctrl = recv.meta.control;
-  if (ctrl.cmd == Control::BARRIER && !recv.meta.request) {
+  if ((ctrl.cmd == Control::BARRIER || ctrl.cmd == Control::MEMBERSHIP_CHANGE_BARRIER) && !recv.meta.request) {
     barrier_mu_.lock();
     auto size = barrier_done_[recv.meta.app_id].size();
     for (size_t customer_id = 0; customer_id < size; customer_id++) {
