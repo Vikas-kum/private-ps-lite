@@ -30,41 +30,99 @@ void Postoffice::InitEnvironment() {
   is_new_worker_ = GetEnv("NEW_WORKER", 0);
 }
 
-void Postoffice::updateNumWorker(const char* val){
+void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids){
   int prev_num_worker = num_workers_;
   num_workers_ = atoi(val);
-  PS_VLOG(1) << "Process:" << getpid() << " Updated num workers";
+  PS_VLOG(1) << "Process:" << getpid() << " Updated num workers from :" << prev_num_worker << " to " << num_workers_;
   // init node info.
-  for (int i = prev_num_worker; i < num_workers_; ++i) {
-    int id = WorkerRankToID(i);
-    for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
+  if(removed_node_ids.size() > 0) {
+    CHECK_GT(prev_num_worker, num_workers_);
+    van_->DropSenderHosts(removed_node_ids);
+    
+    for (int g : {kWorkerGroup, kWorkerGroup + kServerGroup,
                     kWorkerGroup + kScheduler,
                     kWorkerGroup + kServerGroup + kScheduler}) {
-      node_ids_[g].push_back(id);
-      PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
+      auto it = node_ids_[g].begin();
+      while(it != node_ids_[g].end()){
+        // if *it in removed_node_ids 
+        if(removed_node_ids.find(*it) != removed_node_ids.end()){
+          node_ids_[g].erase(it);
+        } else {
+          ++it;
+        }
+      }
     }
-  }  
+    removed_hosts_ = true;
+  } else {
+    // Nodes are added 
+    for (int i = prev_num_worker; i < num_workers_; ++i) {
+      int id = WorkerRankToID(i);
+      for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
+                      kWorkerGroup + kScheduler,
+                      kWorkerGroup + kServerGroup + kScheduler}) {
+        node_ids_[g].push_back(id);
+        PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
+      }
+    }  
+  }
+};
+
+std::unordered_set<int> Postoffice::parseRemovedNodeStringAndGetIds(const std::string& data){
+  std::vector<std::string> removed_hosts;
+  std::istringstream iss(data);
+  std::string token;
+  while (std::getline(iss, token, ',')){
+    removed_hosts.push_back(token);
+    PS_VLOG(1) << " Removing host:" << token;
+  }
+  return van_->GetNodeIdSet(removed_hosts);
 }
 
-void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std::string& val) {
+void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data) {
   CHECK_EQ(env_var, "DMLC_NUM_WORKER") << " Only updating num_workers is allowed";
    // if environment variable is DMLC_NUM_WORKER, then update_num_worker
   // update your own environment variable
+  std::unordered_set<int> removed_node_ids;
+  if(data.size() > 0 && env_var == "DMLC_NUM_WORKER"){
+      CHECK_GT(num_workers_, atoi(val.c_str()));
+      // this is request for removal of nodes
+      // get id of node which is to be removed
+      // parse comma separated string, get list of hostnames
+      // get node ids put in removed_node_ids
+      removed_node_ids = parseRemovedNodeStringAndGetIds(data);
+  }
+
   if(is_scheduler_) {
     Message req;
     req.meta.request = true;
     req.meta.control.cmd = Control::Command::UPDATE_ENV_VAR;
     req.meta.app_id = 0;
-    SArray<std::string> key {env_var,val};
+    req.meta.sender = van_->my_node().id;
+    char *buf = new char[env_var.size() +1];
+    strcpy(buf, env_var.c_str());
+    SArray<char> key (buf, env_var.size() + 1);
     req.AddData(key);
-
-  //  req.meta.customer_id = customer_id;
-    req.meta.timestamp = van_->GetTimestamp();
+    char* val_buf = new char[val.size() + 1];
+    strcpy(val_buf, val.c_str());
+    SArray<char>v (val_buf, val.size() +1);
+    req.AddData(v);
+    if(data.size() > 0){
+      char *d = new char[data.size() +1];
+      strcpy(d, data.c_str());
+      SArray<char>dd (d, data.size() +1);
+      req.AddData(dd);
+    }
     update_req_sent = 0;
+    
     PS_VLOG(1) << "Process:" << getpid() << " In scheduler sending message to others";
     for (int r : GetNodeIDs(kWorkerGroup + kServerGroup)) {
       int recver_id = r;
-      
+      // TODO do not send request to nodes that are going to be removed 
+      if(removed_node_ids.find(r) != removed_node_ids.end()){
+        PS_VLOG(1) << "Process:" << getpid() << " Skipping sending UPDATE_ENV_VAR msg to " \
+        "node id:" << r << " as this node is going to be removed";
+        continue;
+      }
       req.meta.recver = recver_id;
       req.meta.timestamp = van_->GetTimestamp();
       PS_VLOG(1)<< "Process:" << getpid() << " In scheduler sending message to receiver r:" << recver_id;
@@ -72,8 +130,8 @@ void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std
       update_req_sent++;
     }
   }
-  // update my own environment variable    
-  updateNumWorker(val.c_str()); 
+  // update my own environment variable  
+  updateNumWorker(val.c_str(), removed_node_ids); 
 }
 
 void Postoffice::notifyUpdateEnvReceived() {
@@ -235,28 +293,29 @@ void Postoffice::Barrier(int customer_id, int node_group, bool is_membership_cha
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   PS_VLOG(1) << "Process:" << getpid() << " Barrier called for cust: " <<customer_id
   << " node_group:" << node_group << " My node role:" << role;
-  if(is_new_worker_){
-  PS_VLOG(1) << "Slept in barrier for new worker";
-  sleep(100000);
-  PS_VLOG(1) << " Woke up";
-  }
   barrier_done_[0][customer_id] = false;
   Message req;
   req.meta.recver = kScheduler;
   req.meta.request = true;
+  req.meta.sender = van_->my_node().id;
   if(is_membership_change_barrier) {
     PS_VLOG(1) << "Process:" << getpid() << " MCBarrier called for cust: " <<customer_id
   << " node_group:" << node_group << " My node role:" << role;
     req.meta.control.cmd = Control::Command::MEMBERSHIP_CHANGE_BARRIER;
     if(data.size() > 0 ){
       for(auto entry : data){
-        PS_VLOG(1) << " MCBarrier data " << entry.first << " " << entry.second; 
-
-        SArray<std::string> key {entry.first, entry.second};
+        char *buf = new char[entry.first.size() +1 ];
+        strcpy(buf, entry.first.c_str());
+        SArray<char> key (buf, entry.first.size()+1);
         req.AddData(key);
+        char* val_buf = new char[entry.second.size() +1 ];
+        strcpy(val_buf, entry.second.c_str());
+        SArray<char>v (val_buf, entry.second.size()+1);
+        req.AddData(v);
+
+        PS_VLOG(1) << "MembershipChangeBarrier Sending data " << entry.first << " : " << entry.second; 
       }
     }
-    req.meta.sender = van_->my_node().id;
   } else {
     req.meta.control.cmd = Control::BARRIER;
   }

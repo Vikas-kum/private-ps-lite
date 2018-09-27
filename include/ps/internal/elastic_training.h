@@ -39,11 +39,11 @@ class ETDefaultNodeManager: public ETNodeManager {
       return on_success_resp_cb_();
     }
   private:
-    void findMembershipChanges(std::vector<std::string>& worker_added, std::vector<std::string>& worker_removed);
+    void findMembershipChanges();
     void OnSuccessUpdatingEnv(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb);
-
-    std::unordered_set<std::string> workers;
-    std::vector<std::string> worker_added, worker_removed;
+    void getCurrentWorkerSet();
+    std::unordered_set<std::string> workers_;
+    std::vector<std::string> workers_added_, workers_removed_;
     std::function<void()> on_success_resp_cb_;
 };
 

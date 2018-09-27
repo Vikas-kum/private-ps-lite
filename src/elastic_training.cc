@@ -6,16 +6,20 @@
 #include "ps/internal/postoffice.h"
 
 namespace ps {
-
-ETDefaultNodeManager::ETDefaultNodeManager() {
+void ETDefaultNodeManager::getCurrentWorkerSet() {
   const char *host_file = NULL;
   host_file = CHECK_NOTNULL(Environment::Get()->find("WORKER_HOST_FILE"));
   std::ifstream ff(host_file, std::ifstream::in);
   std::string worker;
+  workers_.clear();
   while(getline(ff, worker)){
-    workers.insert(worker);
+    workers_.insert(worker);
     PS_VLOG(1) << "PID:" << getpid() << " ETManager inserted worker:" << worker; 
   }
+};
+
+ETDefaultNodeManager::ETDefaultNodeManager() {
+  getCurrentWorkerSet();
 };
 
  /**
@@ -53,38 +57,46 @@ void ETNodeManager::launchCommandOnNewWorker(const std::string& worker_ip, const
   }
   const char* training_command = NULL;
   training_command = CHECK_NOTNULL(Environment::Get()->find("TRAINING_CMD"));
+  cmd += " ";
   cmd += std::string(training_command);
   PS_VLOG(1) << " Launching with command:" << cmd;
   std::system(cmd.c_str());
 };
 
 void ETDefaultNodeManager::invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb)  {
-  findMembershipChanges(worker_added, worker_removed);
-  if(worker_removed.size() > 0) {
-    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() - worker_removed.size()));
+  findMembershipChanges();
+  if(workers_removed_.size() > 0) {
+    std::string worker_removed_string = "";
+    
+    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() - workers_removed_.size()), worker_removed_string);
     // above will send message to and come back, let's install remove callback
-  }
-  if(worker_added.size() > 0) {
-    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() + worker_added.size()));
+  } else if(workers_added_.size() > 0) {
+    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() + workers_added_.size()), "");
+  } else {
+    OnSuccessUpdatingEnv(std::move(env), std::move(res_cb));
+    return;
   }
   on_success_resp_cb_ = std::bind(&ETDefaultNodeManager::OnSuccessUpdatingEnv, this,  std::move(env), std::move(res_cb)); 
 };
 
 void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb){
   PS_VLOG(1) << "Process:" << getpid() << " Invoked OnSuccessUpdatingEnv";
-  for(auto new_worker_host : worker_added){
+  for(auto new_worker_host : workers_added_){
     // launch ssh script on new machine with extra parameters
     launchCommandOnNewWorker(new_worker_host, env);
   }
   
   // TODO for worker removed, may be remove connections from scheduler,
   // Need to remove nodes from node group
+  getCurrentWorkerSet();
   res_cb();
 }
 
-void ETDefaultNodeManager::findMembershipChanges(std::vector<std::string>& worker_added, std::vector<std::string> &worker_removed){
+void ETDefaultNodeManager::findMembershipChanges(){
   const char *host_file = NULL;
   host_file = CHECK_NOTNULL(Environment::Get()->find("WORKER_HOST_FILE"));
+  PS_VLOG(1) << " In find membership changes: Sleeping for 100 seconds for debugging";
+  sleep(100);
   std::ifstream ff(host_file, std::ifstream::in);
   std::string worker;
   std::unordered_set<std::string> cur_workers;
@@ -92,16 +104,16 @@ void ETDefaultNodeManager::findMembershipChanges(std::vector<std::string>& worke
     cur_workers.insert(worker);
   }
   for(auto p: cur_workers){
-    if(workers.find(p) == workers.end()){
-      worker_added.push_back(p);
+    if(workers_.find(p) == workers_.end()){
+      workers_added_.push_back(p);
     }
   }
-  for(auto p: workers){
+  for(auto p: workers_){
     if(cur_workers.find(p) == cur_workers.end()){
-      worker_removed.push_back(p);
+      workers_removed_.push_back(p);
     }
   }
   PS_VLOG(1) << "In findmembership changes";
- // worker_added.push_back("127.0.0.1");
+ // workers_added_.push_back("127.0.0.1");
 };
 }

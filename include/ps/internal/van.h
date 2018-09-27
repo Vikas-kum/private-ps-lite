@@ -57,6 +57,9 @@ class Van {
      */
     int Send(const Message &msg);
 
+    void DropSenderHosts(const std::unordered_set<int>& drop_senders);
+    std::unordered_set<int> GetNodeIdSet(const std::vector<std::string>& senders);
+
     /**
      * \brief return my node
      */
@@ -106,6 +109,10 @@ class Van {
      * \return the number of bytes sent
      */
     virtual int SendMsg(const Message &msg) = 0;
+
+    virtual void DropSender(const std::unordered_set<int>& ids) = 0;
+    virtual bool IsSenderIdValid(int sender_id) = 0;
+    virtual std::unordered_set<int> getNodeIds(const std::vector<std::string>& senders) = 0;
 
     void SendResponseToGroup(int group, int max_receiver_id, int custId, int appId, Control::Command c);
 

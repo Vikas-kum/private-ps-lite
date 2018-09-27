@@ -128,6 +128,8 @@ class Postoffice {
     return et_node_manager_;
   }
 
+  bool removed_hosts() const { return removed_hosts_; }
+
   /** \brief Returns the rank of this node in its group
    *
    * Each worker will have a unique rank within [0, NumWorkers()). So are
@@ -179,7 +181,7 @@ class Postoffice {
    update variables in memory which corresponds to environment variables
    // currently supported num_worker, num_server, num_scheduler
   */
-  void updateEnvironmentVariable(const std::string& env_var, const std::string& val);
+  void updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data);
   void notifyUpdateEnvReceived();
 
  private:
@@ -187,7 +189,8 @@ class Postoffice {
   ~Postoffice() { delete van_; }
 
   void InitEnvironment();
-  void updateNumWorker(const char* val);
+  void updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids);
+  std::unordered_set<int> parseRemovedNodeStringAndGetIds(const std::string& data);
 
   Van* van_;
   mutable std::mutex mu_;
@@ -206,6 +209,7 @@ class Postoffice {
   std::mutex heartbeat_mu_;
   std::mutex start_mu_;
   int init_stage_ = 0;
+  bool removed_hosts_ = false;
   std::unordered_map<int, time_t> heartbeats_;
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */

@@ -38,18 +38,26 @@ void Van::ProcessUpdateEnvVariable(Message* msg){
   //TODO Vikas
   if(msg->meta.request){
     // call Update EnvVariable
-    std::string env_var = (static_cast<SArray<std::string>>(((msg->data)[0])))[0];
-    std::string val = (static_cast<SArray<std::string>>(((msg->data)[0])))[1];
+    std::string env_var = std::string(msg->data[0].data());
+    std::string val = std::string(msg->data[1].data());
+    // in case of node removal, new data represents nodes to remove
+    std::string data;
+    if(msg->data.size() > 2) {
+      data = std::string(msg->data[2].data());
+      // parse string to create a unordered set
+    }
     PS_VLOG(1) << "Pid:" << getpid() << " ProcessUpdate Got env_var:" << env_var <<
     " value: "<< val ; 
-    Postoffice::Get()->updateEnvironmentVariable(env_var, val);
+    Postoffice::Get()->updateEnvironmentVariable(env_var, val, data);
     // Send Ack Msg Back to scheduler
     Message update_env_ack;
     update_env_ack.meta.recver = kScheduler;
     update_env_ack.meta.control.cmd = Control::UPDATE_ENV_VAR;
     update_env_ack.meta.timestamp = timestamp_++;
     update_env_ack.meta.request = false;
+    update_env_ack.meta.sender = my_node_.id;
     PS_VLOG(1) << "Process:" << getpid() << " Seding back ack to scheduler";
+
     // send back ack
     Send(update_env_ack);
   } else {
@@ -105,8 +113,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
       if(had_empty_node_id){
         if (node.role == Node::SERVER) num_servers_++;
         if (node.role == Node::WORKER) num_workers_++;
-      }
-      
+      }     
     }
     // TODO , my_node(scheduler should not be pushed if it is already there)
     if(is_scheduler_added == 0) {
@@ -213,6 +220,7 @@ void Van::ProcessHearbeat(Message* msg) {
       heartbeat_ack.meta.control.cmd = Control::HEARTBEAT;
       heartbeat_ack.meta.control.node.push_back(my_node_);
       heartbeat_ack.meta.timestamp = timestamp_++;
+      heartbeat_ack.meta.sender = my_node().id;
       // send back heartbeat
       Send(heartbeat_ack);
     }
@@ -243,12 +251,12 @@ void Van::ProcessBarrierCommand(Message* msg) {
           if(r > max_receiver_id) max_receiver_id = r;
         }
         std::vector<std::pair<std::string, std::string> > env;
-        for(size_t i=0 ; i < msg->data.size() ; ++i){
-          std::string k = (static_cast<SArray<std::string>>(((msg->data)[i])))[0];
-          std::string v = (static_cast<SArray<std::string>>(((msg->data)[i])))[1];
-          PS_VLOG(1) << " MCB: Got Key Value: " << k << " " <<v;
+        PS_VLOG(1) << "MembershipChangeBarrier Msg is:" << msg->DebugString();
+        for(size_t i=0 ; i < msg->data.size() ; i+=2){
+          std::string k = std::string(msg->data[i].data());
+          std::string v = std::string(msg->data[i+1].data());
+          PS_VLOG(1) << "MembershipChangeBarrier: Got Key Value: " << k << " " <<v;
           env.emplace_back(k,v);
-          PS_VLOG(1) << " MCB: Got Key Value: " << k << " " <<v;
         }
 
         ps::Postoffice::Get()->et_node_manager()->invokeMembershipChange(std::move(env), std::bind(&Van::SendResponseToGroup, this, group, max_receiver_id, msg->meta.customer_id, msg->meta.app_id, Control::Command::MEMBERSHIP_CHANGE_BARRIER));
@@ -266,6 +274,7 @@ void Van::SendResponseToGroup(int group, int max_recver_id, int custId, int appI
   res.meta.app_id = appId;
   res.meta.customer_id = custId;
   res.meta.control.cmd = c;
+  res.meta.sender = my_node().id;
   if(c == Control::MEMBERSHIP_CHANGE_BARRIER){
     PS_VLOG(1) << " Sending MCBresponse to group:" << group;
   }
@@ -288,6 +297,12 @@ void Van::ProcessDataMsg(Message* msg) {
   CHECK_NE(msg->meta.sender, Meta::kEmpty);
   CHECK_NE(msg->meta.recver, Meta::kEmpty);
   CHECK_NE(msg->meta.app_id, Meta::kEmpty);
+  // TODO check only if 
+  if(ready_ && ps::Postoffice::Get()->removed_hosts() && !IsSenderIdValid(msg->meta.sender)){
+    PS_VLOG(1) << " Message came from invalid sender id:" << msg->meta.sender << " Dropping message.";
+    return;
+  }
+
   int app_id = msg->meta.app_id;
   int customer_id = Postoffice::Get()->is_worker() ? msg->meta.customer_id : app_id;
   auto* obj = Postoffice::Get()->GetCustomer(app_id, customer_id, 5);
@@ -409,7 +424,7 @@ void Van::Start(int customer_id) {
 
   // wait until ready
   while (!ready_.load()) {
-    PS_VLOG(1) << "PID:" << getpid() <<  " Sleeping for being ready";
+  //  PS_VLOG(1) << "PID:" << getpid() <<  " Sleeping for being ready";
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
@@ -467,11 +482,19 @@ int Van::Send(const Message& msg) {
   return send_bytes;
 }
 
+void Van::DropSenderHosts(const std::unordered_set<int>& drop_senders){
+  DropSender(drop_senders);
+}
+
+std::unordered_set<int> Van::GetNodeIdSet(const std::vector<std::string>& senders){
+  return getNodeIds(senders);
+}
+
 void Van::Receiving() {
   Meta nodes;
   Meta recovery_nodes;  // store recovery nodes
   recovery_nodes.control.cmd = Control::ADD_NODE;
-  PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
+ // PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
 
 
   while (true) {
@@ -486,7 +509,10 @@ void Van::Receiving() {
         continue;
       }
     }
-
+    if(ready_ && ps::Postoffice::Get()->removed_hosts() && msg.meta.sender != Meta::kEmpty && !IsSenderIdValid(msg.meta.sender)){
+      PS_VLOG(1) << " Dropping message from sender:" << msg.meta.sender << " as sender not in valid sender host.";
+      continue;
+    }
     CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
     if (Postoffice::Get()->verbose() >= 1) {
@@ -504,7 +530,7 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::ADD_NODE) {
         ProcessAddNodeCommand(&msg, &nodes, &recovery_nodes);
       } else if (ctrl.cmd == Control::BARRIER || ctrl.cmd == Control::Command::MEMBERSHIP_CHANGE_BARRIER) {
-        PS_VLOG(1) << "Process:"<<getpid() << " received message:" << msg.DebugString(); 
+        PS_VLOG(1) << "Process:"<< getpid() << " received message:" << msg.DebugString(); 
 
         ProcessBarrierCommand(&msg);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
