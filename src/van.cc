@@ -65,7 +65,8 @@ void Van::ProcessUpdateEnvVariable(Message* msg){
     CHECK_EQ(Postoffice::Get()->is_scheduler(), 1) << " UpdateEnv Response received is expected on scheduler. My role is:" << my_node().role << " Process:"<<getpid();
     // TODO notify the thread waiting on cond variable
     PS_VLOG(1) << "Process:" << getpid() << " Notifying Scheduler for repsonse";
-    Postoffice::Get()->notifyUpdateEnvReceived();   
+    Postoffice::Get()->notifyUpdateEnvReceived(); 
+    PS_VLOG(1) << "Process:" << getpid() << " Scheduler sent messages for repsonse";  
   }
     
   // else
@@ -499,6 +500,8 @@ void Van::Receiving() {
 
   while (true) {
     Message msg;
+    PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
+
     int recv_bytes = RecvMsg(&msg);
     PS_VLOG(1) << "Process:"<<getpid() << " received message:" << msg.DebugString(); 
     // For debug, drop received message

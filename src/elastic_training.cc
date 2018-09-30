@@ -59,6 +59,7 @@ void ETNodeManager::launchCommandOnNewWorker(const std::string& worker_ip, const
   training_command = CHECK_NOTNULL(Environment::Get()->find("TRAINING_CMD"));
   cmd += " ";
   cmd += std::string(training_command);
+  cmd += " &";
   PS_VLOG(1) << " Launching with command:" << cmd;
   std::system(cmd.c_str());
 };
@@ -67,7 +68,12 @@ void ETDefaultNodeManager::invokeMembershipChange(const std::vector<std::pair<st
   findMembershipChanges();
   if(workers_removed_.size() > 0) {
     std::string worker_removed_string = "";
-    
+    for(int i=0; i< workers_removed_.size(); ++i){
+      worker_removed_string += workers_removed_[i];
+      if(i < workers_removed_.size() -1){
+        worker_removed_string += ",";
+      }
+    }  
     Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() - workers_removed_.size()), worker_removed_string);
     // above will send message to and come back, let's install remove callback
   } else if(workers_added_.size() > 0) {
@@ -95,8 +101,8 @@ void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std:
 void ETDefaultNodeManager::findMembershipChanges(){
   const char *host_file = NULL;
   host_file = CHECK_NOTNULL(Environment::Get()->find("WORKER_HOST_FILE"));
-  PS_VLOG(1) << " In find membership changes: Sleeping for 100 seconds for debugging";
-  sleep(100);
+  PS_VLOG(1) << " In find membership changes: Sleeping for 20 seconds for debugging";
+  sleep(20);
   std::ifstream ff(host_file, std::ifstream::in);
   std::string worker;
   std::unordered_set<std::string> cur_workers;
@@ -113,7 +119,7 @@ void ETDefaultNodeManager::findMembershipChanges(){
       workers_removed_.push_back(p);
     }
   }
-  PS_VLOG(1) << "In findmembership changes";
+//  PS_VLOG(1) << "In findmembership changes";
  // workers_added_.push_back("127.0.0.1");
 };
 }

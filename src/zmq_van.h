@@ -135,15 +135,17 @@ class ZMQVan : public Van {
       if(itr != ids.end()){
         // this entry needs to be dropped from senders_ip_port, as it is in ids
         // removing it from senders_ip_port
-        PS_VLOG(1) << " Dropping sender:" << it->first << " with port:" << it->second.second << " node id:" << it->second.first;
-        senders_ip_port_.erase(it);
+        PS_VLOG(1) << "Proc:" << getpid() << " Dropping sender:" << it->first << " with port:" << it->second.second << " node id:" << it->second.first;
+        it = senders_ip_port_.erase(it);
       } else {
         ++it;
       }    
     }
     for(auto id : ids){
-      if(senders_.find(id) != senders_.end()){
-        senders_.erase(id);
+      auto it = senders_.find(id);
+      if(it != senders_.end()){
+         PS_VLOG(1) << "Proc:" << getpid() << " Dropping senderid:" << id; 
+        it = senders_.erase(it);
         //TODO do we need to close socket connection to sender explicitly or is it RAII ?? 
       }
     } 
