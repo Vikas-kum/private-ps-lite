@@ -500,10 +500,10 @@ void Van::Receiving() {
 
   while (true) {
     Message msg;
-    PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
+    //PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
 
     int recv_bytes = RecvMsg(&msg);
-    PS_VLOG(1) << "Process:"<<getpid() << " received message:" << msg.DebugString(); 
+    //PS_VLOG(1) << "Process:"<<getpid() << " received message:" << msg.DebugString(); 
     // For debug, drop received message
     if (ready_.load() && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;

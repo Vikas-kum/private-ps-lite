@@ -101,8 +101,7 @@ void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std:
 void ETDefaultNodeManager::findMembershipChanges(){
   const char *host_file = NULL;
   host_file = CHECK_NOTNULL(Environment::Get()->find("WORKER_HOST_FILE"));
-  PS_VLOG(1) << " In find membership changes: Sleeping for 20 seconds for debugging";
-  sleep(20);
+  PS_VLOG(1) << " In find membership changes: Sleeping for 0 seconds for debugging";
   std::ifstream ff(host_file, std::ifstream::in);
   std::string worker;
   std::unordered_set<std::string> cur_workers;
@@ -112,11 +111,13 @@ void ETDefaultNodeManager::findMembershipChanges(){
   for(auto p: cur_workers){
     if(workers_.find(p) == workers_.end()){
       workers_added_.push_back(p);
+      PS_VLOG(1) << " Worker added:" << p;
     }
   }
   for(auto p: workers_){
     if(cur_workers.find(p) == cur_workers.end()){
       workers_removed_.push_back(p);
+      PS_VLOG(1) << "Worker removed:" << p;
     }
   }
 //  PS_VLOG(1) << "In findmembership changes";
