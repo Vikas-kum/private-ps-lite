@@ -4,6 +4,7 @@
 #include "ps/internal/van.h"
 #include <thread>
 #include <chrono>
+#include <climits>
 #include "ps/base.h"
 #include "ps/sarray.h"
 #include "ps/internal/postoffice.h"
@@ -263,7 +264,7 @@ void Van::ProcessBarrierCommand(Message* msg) {
         ps::Postoffice::Get()->et_node_manager()->invokeMembershipChange(std::move(env), std::bind(&Van::SendResponseToGroup, this, group, max_receiver_id, msg->meta.customer_id, msg->meta.app_id, Control::Command::MEMBERSHIP_CHANGE_BARRIER));
         return;
       }
-      SendResponseToGroup(group, INT_MAX, msg->meta.customer_id, msg->meta.app_id, Control::Command::BARRIER);
+      SendResponseToGroup(group, INT_MAX/*max_receiver_id*/, msg->meta.customer_id, msg->meta.app_id, Control::Command::BARRIER);
     }
   } else {
     Postoffice::Get()->Manage(*msg);
