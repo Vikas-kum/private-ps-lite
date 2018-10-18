@@ -201,6 +201,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     const char* instance_pool = NULL;
     instance_pool = CHECK_NOTNULL(Environment::Get()->find("INSTANCE_POOL"));
     if(strcmp(instance_pool, "DEFAULT") == 0) {
+      LOG(INFO) << "Creating et_node_manager";
       et_node_manager_ = std::make_shared<ETDefaultNodeManager>();
     } else {
       PS_VLOG(1) << "FATAL unknown instance pool";

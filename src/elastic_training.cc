@@ -95,6 +95,8 @@ void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std:
   // TODO for worker removed, may be remove connections from scheduler,
   // Need to remove nodes from node group
   getCurrentWorkerSet();
+  workers_added_.clear();
+  workers_removed_.clear();
   res_cb();
 }
 
