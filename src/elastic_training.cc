@@ -68,7 +68,7 @@ void ETDefaultNodeManager::invokeMembershipChange(const std::vector<std::pair<st
   findMembershipChanges();
   if(workers_removed_.size() > 0) {
     std::string worker_removed_string = "";
-    for(int i=0; i< workers_removed_.size(); ++i){
+    for(size_t i=0; i< workers_removed_.size(); ++i){
       worker_removed_string += workers_removed_[i];
       if(i < workers_removed_.size() -1){
         worker_removed_string += ",";
