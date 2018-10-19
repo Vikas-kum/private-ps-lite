@@ -72,6 +72,19 @@ void Van::ProcessUpdateEnvVariable(Message* msg){
     
   // else
 }
+
+void Van::RemoveNodeId(const std::unordered_set<int>& removed_node_ids){
+  for(auto id: removed_node_ids){
+    if(worker_node_.find(id) != worker_node_.end()){
+      worker_node_.erase(id);
+      LOG(INFO) << "Pid:" << getpid() << " Removed node id :" << id << " from worker-list";
+    } else if (server_node_.find(id) != server_node_.end()){
+      server_node_.erase(id);
+      LOG(INFO) << "Pid:" << getpid() << " Removed node id :" << id << " from server-list";
+    }
+  }
+}
+
 void Van::ProcessAddNodeCommandAtScheduler(
         Message* msg, Meta* nodes, Meta* recovery_nodes) {
   recovery_nodes->control.cmd = Control::ADD_NODE;
@@ -115,7 +128,12 @@ void Van::ProcessAddNodeCommandAtScheduler(
       if(had_empty_node_id){
         if (node.role == Node::SERVER) num_servers_++;
         if (node.role == Node::WORKER) num_workers_++;
-      }     
+      } 
+      if(node.role == Node::SERVER){
+        server_node_.insert(node.id);
+      } else if (node.role == Node::WORKER){
+        worker_node_.insert(node.id);
+      }
     }
     // TODO , my_node(scheduler should not be pushed if it is already there)
     if(is_scheduler_added == 0) {
@@ -337,8 +355,22 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
       // check how to increment below 2
      // if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
      // if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
+      if(node.role == Node::WORKER){
+        worker_node_.insert(node.id);
+      } else if (node.role == Node::SERVER){
+        server_node_.insert(node.id);
+      }
     }
+    // TODO create worker node set, server node set and scheduler node set
+    // In each set, store id 
+
     PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
+    for(auto id: worker_node_){
+      LOG(INFO) << " Worker node Id: " << id;
+    }
+    for(auto id: server_node_) {
+      LOG(INFO) << " Server node id" << id;
+    }
     ready_ = true;
   }
 }
@@ -486,6 +518,29 @@ int Van::Send(const Message& msg) {
 
 void Van::DropSenderHosts(const std::unordered_set<int>& drop_senders){
   DropSender(drop_senders);
+  RemoveNodeId(drop_senders);
+}
+
+int Van::GetMyRank(){
+  Node::Role my_role = my_node_.role;
+  if(my_role == Node::SCHEDULER){
+    return Postoffice::IDtoRank(my_node_.id);
+  } else if (my_role == Node::WORKER) {
+     auto itr = worker_node_.find(my_node_.id);
+     if(itr == worker_node_.end()){
+       LOG(FATAL) << "Couldn't find my worker id:" << my_node_.id << " in registered worker nodes"; 
+     } else {
+       return std::distance(worker_node_.begin(), itr);
+     }
+  } else {
+    auto itr = server_node_.find(my_node_.id);
+     if(itr == server_node_.end()){
+       LOG(FATAL) << "Couldn't find my server id:" << my_node_.id << " in registered server nodes"; 
+     } else {
+       return std::distance(server_node_.begin(), itr);
+     }
+  }
+  throw std::runtime_error("Couldn't find my id in registered worker or server nodes");
 }
 
 std::unordered_set<int> Van::GetNodeIdSet(const std::vector<std::string>& senders){

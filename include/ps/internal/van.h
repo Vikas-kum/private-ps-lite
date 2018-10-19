@@ -11,6 +11,7 @@
 #include <memory>
 #include <atomic>
 #include <ctime>
+#include <set>
 #include <unordered_set>
 #include "ps/base.h"
 #include "ps/internal/message.h"
@@ -84,6 +85,8 @@ class Van {
      */
     inline bool IsReady() { return ready_; }
 
+    int GetMyRank();
+
  protected:
     /**
      * \brief connect to a node
@@ -127,8 +130,12 @@ class Van {
      */
     void UnpackMeta(const char *meta_buf, int buf_size, Meta *meta);
 
+    void RemoveNodeId(const std::unordered_set<int>& removed_node_ids);
+
     Node scheduler_;
     Node my_node_;
+    std::set<int> worker_node_;
+    std::set<int> server_node_;
     bool is_scheduler_;
     std::mutex start_mu_;
 
