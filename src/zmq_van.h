@@ -145,7 +145,7 @@ class ZMQVan : public Van {
       auto it = senders_.find(id);
       if(it != senders_.end()){
          PS_VLOG(1) << "Proc:" << getpid() << " Dropping senderid:" << id; 
-        it = senders_.erase(it);
+         senders_.erase(it);
         //TODO do we need to close socket connection to sender explicitly or is it RAII ?? 
       }
     } 

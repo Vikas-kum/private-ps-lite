@@ -64,7 +64,7 @@ void ETNodeManager::launchCommandOnNewWorker(const std::string& worker_ip, const
   std::system(cmd.c_str());
 };
 
-void ETDefaultNodeManager::invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb)  {
+void ETDefaultNodeManager::invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb, Meta* nodes)  {
   findMembershipChanges();
   if(workers_removed_.size() > 0) {
     std::string worker_removed_string = "";
@@ -74,10 +74,10 @@ void ETDefaultNodeManager::invokeMembershipChange(const std::vector<std::pair<st
         worker_removed_string += ",";
       }
     }  
-    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() - workers_removed_.size()), worker_removed_string);
+    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() - workers_removed_.size()), worker_removed_string, nodes);
     // above will send message to and come back, let's install remove callback
   } else if(workers_added_.size() > 0) {
-    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() + workers_added_.size()), "");
+    Postoffice::Get()->updateEnvironmentVariable("DMLC_NUM_WORKER", std::to_string(Postoffice::Get()->num_workers() + workers_added_.size()), "", nodes);
   } else {
     OnSuccessUpdatingEnv(std::move(env), std::move(res_cb));
     return;

@@ -22,7 +22,7 @@ class ETNodeManager {
    * \brief takes action to do a membership change if required
    * 
    */
-  virtual void invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb)=0;
+  virtual void invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb, Meta* nodes)=0;
   /**
    * \brief launches training script on new worker node
    */
@@ -33,7 +33,7 @@ class ETNodeManager {
 class ETDefaultNodeManager: public ETNodeManager {
   public:
     explicit ETDefaultNodeManager();
-    virtual void invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb);
+    virtual void invokeMembershipChange(const std::vector<std::pair<std::string, std::string> > env, std::function<void()> res_cb, Meta* nodes);
     virtual void invokeSuccessResponseCallback () {
       LOG(INFO) << " Invoke success callback called Process:" << getpid();
       return on_success_resp_cb_();

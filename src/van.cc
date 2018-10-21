@@ -35,7 +35,7 @@ void Van::ProcessTerminateCommand() {
   ready_ = false;
 }
 
-void Van::ProcessUpdateEnvVariable(Message* msg){
+void Van::ProcessUpdateEnvVariable(Message* msg,  Meta* nodes){
   //TODO Vikas
   if(msg->meta.request){
     // call Update EnvVariable
@@ -49,7 +49,7 @@ void Van::ProcessUpdateEnvVariable(Message* msg){
     }
     PS_VLOG(1) << "Pid:" << getpid() << " ProcessUpdate Got env_var:" << env_var <<
     " value: "<< val ; 
-    Postoffice::Get()->updateEnvironmentVariable(env_var, val, data);
+    Postoffice::Get()->updateEnvironmentVariable(env_var, val, data, nodes);
     // Send Ack Msg Back to scheduler
     Message update_env_ack;
     update_env_ack.meta.recver = kScheduler;
@@ -69,11 +69,11 @@ void Van::ProcessUpdateEnvVariable(Message* msg){
     Postoffice::Get()->notifyUpdateEnvReceived(); 
     PS_VLOG(1) << "Process:" << getpid() << " Scheduler sent messages for repsonse";  
   }
-    
   // else
 }
 
 void Van::RemoveNodeId(const std::unordered_set<int>& removed_node_ids){
+  // remove node if from worker and server list
   for(auto id: removed_node_ids){
     if(worker_node_.find(id) != worker_node_.end()){
       worker_node_.erase(id);
@@ -81,6 +81,18 @@ void Van::RemoveNodeId(const std::unordered_set<int>& removed_node_ids){
     } else if (server_node_.find(id) != server_node_.end()){
       server_node_.erase(id);
       LOG(INFO) << "Pid:" << getpid() << " Removed node id :" << id << " from server-list";
+    }
+  }
+
+  // remove from connected_nodes
+  auto it = connected_nodes_.begin();
+  while(it != connected_nodes_.end()){
+    if(removed_node_ids.find((*it).second) != removed_node_ids.end()){
+      LOG(INFO) << " Process: " << getpid() << " Host:" << (*it).first;
+      LOG(INFO) << " Process: " << getpid() << " dropping node id " << (*it).second << " from connected nodes";
+      it = connected_nodes_.erase(it);
+    } else {
+      it++;
     }
   }
 }
@@ -188,12 +200,14 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
     CHECK_EQ(ctrl.node.size(), 1);
+    LOG(INFO) << " VIKAS UpdateLocalId sender is empty, node->control size:" << nodes->control.node.size();
     if (nodes->control.node.size() < num_nodes + is_scheduler_added) {
       nodes->control.node.push_back(ctrl.node[0]);
       PS_VLOG(1) << " Adding node to scheduler nodes:" << ctrl.node[0].DebugString();
     } else {
       // some node dies and restarts
       CHECK(ready_.load());
+      PS_VLOG(1) << " Not adding node to scheduler nodes";
       for (size_t i = 0; i < nodes->control.node.size() - 1; ++i) {
         const auto& node = nodes->control.node[i];
         if (deadnodes_set->find(node.id) != deadnodes_set->end() &&
@@ -247,7 +261,7 @@ void Van::ProcessHearbeat(Message* msg) {
   }
 }
 
-void Van::ProcessBarrierCommand(Message* msg) {
+void Van::ProcessBarrierCommand(Message* msg, Meta* nodes) {
   auto& ctrl = msg->meta.control;
   if (msg->meta.request) {
     if (barrier_count_.empty()) {
@@ -279,7 +293,7 @@ void Van::ProcessBarrierCommand(Message* msg) {
           env.emplace_back(k,v);
         }
 
-        ps::Postoffice::Get()->et_node_manager()->invokeMembershipChange(std::move(env), std::bind(&Van::SendResponseToGroup, this, group, max_receiver_id, msg->meta.customer_id, msg->meta.app_id, Control::Command::MEMBERSHIP_CHANGE_BARRIER));
+        ps::Postoffice::Get()->et_node_manager()->invokeMembershipChange(std::move(env), std::bind(&Van::SendResponseToGroup, this, group, max_receiver_id, msg->meta.customer_id, msg->meta.app_id, Control::Command::MEMBERSHIP_CHANGE_BARRIER), nodes);
         return;
       }
       SendResponseToGroup(group, INT_MAX/*max_receiver_id*/, msg->meta.customer_id, msg->meta.app_id, Control::Command::BARRIER);
@@ -361,8 +375,6 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
         server_node_.insert(node.id);
       }
     }
-    // TODO create worker node set, server node set and scheduler node set
-    // In each set, store id 
 
     PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
     for(auto id: worker_node_){
@@ -591,12 +603,12 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::BARRIER || ctrl.cmd == Control::Command::MEMBERSHIP_CHANGE_BARRIER) {
         PS_VLOG(1) << "Process:"<< getpid() << " received message:" << msg.DebugString(); 
 
-        ProcessBarrierCommand(&msg);
+        ProcessBarrierCommand(&msg, &nodes);
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);
       } else if(ctrl.cmd == Control::UPDATE_ENV_VAR) {
         PS_VLOG(1) << "Process:" << getpid() << " Got msg to update_env_var";
-        ProcessUpdateEnvVariable(&msg);
+        ProcessUpdateEnvVariable(&msg, &nodes);
       } else {
         LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
       }

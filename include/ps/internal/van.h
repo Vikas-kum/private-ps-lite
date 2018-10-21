@@ -50,7 +50,7 @@ class Van {
      */
     virtual void Start(int customer_id);
 
-    virtual void ProcessUpdateEnvVariable(Message* msg);
+    virtual void ProcessUpdateEnvVariable(Message* msg, Meta* nodes);
 
     /**
      * \brief send a message, It is thread-safe
@@ -68,6 +68,8 @@ class Van {
       CHECK(ready_) << "call Start() first";
       return my_node_;
     }
+
+    int TotalWorkerSeen() { return num_workers_; }
 
     /**
      * \brief stop van
@@ -189,7 +191,7 @@ class Van {
     /**
      * \brief processing logic of Barrier message (run on each node)
      */
-    void ProcessBarrierCommand(Message* msg);
+    void ProcessBarrierCommand(Message* msg, Meta* nodes);
 
     /**
      * \brief processing logic of AddNode message (run on each node)

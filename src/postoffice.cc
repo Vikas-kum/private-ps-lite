@@ -30,7 +30,7 @@ void Postoffice::InitEnvironment() {
   is_new_worker_ = GetEnv("NEW_WORKER", 0);
 }
 
-void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids){
+void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids, Meta* nodes){
   int prev_num_worker = num_workers_;
   num_workers_ = atoi(val);
   PS_VLOG(1) << "Process:" << getpid() << " Updated num workers from :" << prev_num_worker << " to " << num_workers_;
@@ -46,17 +46,32 @@ void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>&
       while(it != node_ids_[g].end()){
         // if *it in removed_node_ids 
         if(removed_node_ids.find(*it) != removed_node_ids.end()){
-          node_ids_[g].erase(it);
+          PS_VLOG(1) << " Erasing node id:" << *it << " from group:" << g;
+          it = node_ids_[g].erase(it);
         } else {
           ++it;
         }
       }
     }
+    if(nodes == nullptr) {
+      return;
+    }
+    auto it = nodes->control.node.begin();
+    while(it != nodes->control.node.end()){
+      if(removed_node_ids.find((*it).id) != removed_node_ids.end()){
+        LOG(INFO) << " Erasing node id:" << (*it).id << " from nodes, pid:" << getpid();
+        it = nodes->control.node.erase(it);
+      } else {
+        it++;
+      }
+    }
     removed_hosts_ = true;
   } else {
     // Nodes are added 
-    for (int i = prev_num_worker; i < num_workers_; ++i) {
-      int id = WorkerRankToID(i);
+    int total_worker_seen_till_now = van_->TotalWorkerSeen();
+    int total_new_worker_added = num_workers_ - prev_num_worker;
+    for (int i = 0; i < total_new_worker_added; ++i) {
+      int id = WorkerRankToID(i + total_worker_seen_till_now);
       for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
                       kWorkerGroup + kScheduler,
                       kWorkerGroup + kServerGroup + kScheduler}) {
@@ -78,7 +93,7 @@ std::unordered_set<int> Postoffice::parseRemovedNodeStringAndGetIds(const std::s
   return van_->GetNodeIdSet(removed_hosts);
 }
 
-void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data) {
+void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data, Meta* nodes) {
   CHECK_EQ(env_var, "DMLC_NUM_WORKER") << " Only updating num_workers is allowed";
    // if environment variable is DMLC_NUM_WORKER, then update_num_worker
   // update your own environment variable
@@ -131,7 +146,7 @@ void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std
     }
   }
   // update my own environment variable  
-  updateNumWorker(val.c_str(), removed_node_ids); 
+  updateNumWorker(val.c_str(), removed_node_ids, nodes);
 }
 
 void Postoffice::notifyUpdateEnvReceived() {

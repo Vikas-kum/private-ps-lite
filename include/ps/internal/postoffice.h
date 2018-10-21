@@ -181,7 +181,7 @@ class Postoffice {
    update variables in memory which corresponds to environment variables
    // currently supported num_worker, num_server, num_scheduler
   */
-  void updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data);
+  void updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data, Meta* nodes);
   void notifyUpdateEnvReceived();
 
  private:
@@ -189,7 +189,7 @@ class Postoffice {
   ~Postoffice() { delete van_; }
 
   void InitEnvironment();
-  void updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids);
+  void updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids, Meta* nodes);
   std::unordered_set<int> parseRemovedNodeStringAndGetIds(const std::string& data);
 
   Van* van_;
@@ -209,12 +209,14 @@ class Postoffice {
   std::mutex heartbeat_mu_;
   std::mutex start_mu_;
   int init_stage_ = 0;
+
+  // This will keep track of if there are removed hosts. In case this is true,
+  // then van will check if sender id is valid after  receiving messages.
   bool removed_hosts_ = false;
   std::unordered_map<int, time_t> heartbeats_;
   Callback exit_callback_;
   /** \brief Holding a shared_ptr to prevent it from being destructed too early */
   std::shared_ptr<Environment> env_ref_;
- // ETNodeManager et_node_manager_;
   std::shared_ptr<ETNodeManager> et_node_manager_;
   time_t start_time_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
