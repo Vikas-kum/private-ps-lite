@@ -111,7 +111,7 @@ class Postoffice {
   }
 
   static inline bool isWorkerId(int id){
-    return id > 0 && ((id - 9) % 2 == 0);
+    return id > 8 && ((id - 9) % 2 == 0);
   }
   /**
    * \brief convert from a node id into a server or worker rank
