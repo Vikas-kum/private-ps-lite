@@ -113,16 +113,16 @@ void Van::ProcessAddNodeCommandAtScheduler(
     // assign node rank
     for (auto& node : nodes->control.node) {
       std::string node_host_ip = node.hostname + ":" + std::to_string(node.port);
-      PS_VLOG(1) << " Node hostIP:" << node_host_ip;
+      PS_VLOG(1) << "Pid:" << getpid() << " Node hostIP:" << node_host_ip;
       if(node.role == Node::SCHEDULER && is_scheduler_added) continue;
       had_empty_node_id = (node.id == Node::kEmpty);
       if (connected_nodes_.find(node_host_ip) == connected_nodes_.end()) {
-        PS_VLOG(1) << "Couldn't find " << node_host_ip << " Node is: " << node.DebugString();
+        PS_VLOG(1) << "Pid:" << getpid() <<  "Couldn't find " << node_host_ip << " Node is: " << node.DebugString();
         CHECK_EQ(node.id, Node::kEmpty);
         int id = node.role == Node::SERVER ?
                  Postoffice::ServerRankToID(num_servers_) :
                  Postoffice::WorkerRankToID(num_workers_);
-        PS_VLOG(1) << "assign rank=" << id << " to node " << node.DebugString();
+        PS_VLOG(1) << "Pid:" << getpid() <<  "assign rank=" << id << " to node " << node.DebugString();
         node.id = id;
         Connect(node);
         Postoffice::Get()->UpdateHeartbeat(node.id, t);
@@ -147,6 +147,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
         worker_node_.insert(node.id);
       }
     }
+    Postoffice::Get()->syncWorkerNodeIdsGroup(worker_node_);
     // TODO , my_node(scheduler should not be pushed if it is already there)
     if(is_scheduler_added == 0) {
       nodes->control.node.push_back(my_node_);
@@ -203,7 +204,7 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
     LOG(INFO) << " VIKAS UpdateLocalId sender is empty, node->control size:" << nodes->control.node.size();
     if (nodes->control.node.size() < num_nodes + is_scheduler_added) {
       nodes->control.node.push_back(ctrl.node[0]);
-      PS_VLOG(1) << " Adding node to scheduler nodes:" << ctrl.node[0].DebugString();
+      LOG(INFO) << " Adding node to scheduler nodes:" << ctrl.node[0].DebugString();
     } else {
       // some node dies and restarts
       CHECK(ready_.load());
@@ -357,7 +358,7 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
   } else {
     for (const auto& node : ctrl.node) {
       std::string addr_str = node.hostname + ":" + std::to_string(node.port);
-      PS_VLOG(1) << " Got node:" << addr_str << " to connect to";
+      PS_VLOG(1) << "pid:" << getpid() <<" Got node:" << addr_str << " to connect to";
       if (connected_nodes_.find(addr_str) == connected_nodes_.end()) {
         Connect(node);
         connected_nodes_[addr_str] = node.id;
@@ -375,13 +376,13 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
         server_node_.insert(node.id);
       }
     }
-
-    PS_VLOG(1) << my_node_.ShortDebugString() << " is connected to others";
+    Postoffice::Get()->syncWorkerNodeIdsGroup(worker_node_);
+    PS_VLOG(1) << "pid: " << getpid() << " " << my_node_.ShortDebugString() << " is connected to others";
     for(auto id: worker_node_){
-      LOG(INFO) << " Worker node Id: " << id;
+      LOG(INFO) << "pid: " << getpid() << " Worker node Id: " << id;
     }
     for(auto id: server_node_) {
-      LOG(INFO) << " Server node id" << id;
+      LOG(INFO) << "pid: " << getpid() << " Server node id" << id;
     }
     ready_ = true;
   }

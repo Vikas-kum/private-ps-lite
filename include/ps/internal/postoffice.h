@@ -64,7 +64,7 @@ class Postoffice {
    * if it is a  node group, return the list of node ids in this
    * group. otherwise, return {node_id}
    */
-  const std::vector<int>& GetNodeIDs(int node_id) const {
+  const std::unordered_set<int>& GetNodeIDs(int node_id) const {
     const auto it = node_ids_.find(node_id);
     CHECK(it != node_ids_.cend()) << "node " << node_id << " doesn't exist";
     return it->second;
@@ -108,6 +108,10 @@ class Postoffice {
    */
   static inline int ServerRankToID(int rank) {
     return rank * 2 + 8;
+  }
+
+  static inline bool isWorkerId(int id){
+    return id > 0 && ((id - 9) % 2 == 0);
   }
   /**
    * \brief convert from a node id into a server or worker rank
@@ -183,6 +187,7 @@ class Postoffice {
   */
   void updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data, Meta* nodes);
   void notifyUpdateEnvReceived();
+  void syncWorkerNodeIdsGroup(std::set<int> workerIds);
 
  private:
   Postoffice();
@@ -190,13 +195,15 @@ class Postoffice {
 
   void InitEnvironment();
   void updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids, Meta* nodes);
+  void addWorkerNodeIdToGroups(int id);
+
   std::unordered_set<int> parseRemovedNodeStringAndGetIds(const std::string& data);
 
   Van* van_;
   mutable std::mutex mu_;
   // app_id -> (customer_id -> customer pointer)
   std::unordered_map<int, std::unordered_map<int, Customer*>> customers_;
-  std::unordered_map<int, std::vector<int>> node_ids_;
+  std::unordered_map<int, std::unordered_set<int>> node_ids_;
   std::mutex server_key_ranges_mu_;
   std::vector<Range> server_key_ranges_;
   bool is_worker_, is_server_, is_scheduler_, is_new_worker_;

@@ -30,6 +30,44 @@ void Postoffice::InitEnvironment() {
   is_new_worker_ = GetEnv("NEW_WORKER", 0);
 }
 
+void Postoffice::addWorkerNodeIdToGroups(int id) {
+  for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
+                    kWorkerGroup + kScheduler,
+                    kWorkerGroup + kServerGroup + kScheduler}) {
+    node_ids_[g].insert(id);
+    PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
+  }
+}
+
+void Postoffice::syncWorkerNodeIdsGroup(std::set<int> workerIds){
+  // first we will add all the current worker to relevant groups
+  for(int id : workerIds){
+    addWorkerNodeIdToGroups(id);
+  }
+  // Now we will remove all the worker id which are registered in groups but not in workerIds
+  auto entry_itr = node_ids_.begin();
+  while(entry_itr != node_ids_.end()){
+    auto itr = entry_itr->second.begin();
+    while(itr != entry_itr->second.end()){
+      int id = *itr;
+      if(isWorkerId(id)){
+        if(workerIds.find(id) == workerIds.end()){
+          PS_VLOG(1) << "Pid:" << getpid() << " Removing worker id:"<< id << " from group:" << entry_itr->first;
+          itr = entry_itr->second.erase(itr);
+          continue;
+        }
+      }
+      itr++;
+    }
+    if(entry_itr->second.size() == 0){
+      PS_VLOG(1) << "Pid:" << getpid() << " Removing group:" << entry_itr->first;
+      entry_itr = node_ids_.erase(entry_itr);
+    } else {
+      entry_itr++;
+    }
+  }
+}
+
 void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids, Meta* nodes){
   int prev_num_worker = num_workers_;
   num_workers_ = atoi(val);
@@ -75,7 +113,7 @@ void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>&
       for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
                       kWorkerGroup + kScheduler,
                       kWorkerGroup + kServerGroup + kScheduler}) {
-        node_ids_[g].push_back(id);
+        node_ids_[g].insert(id);
         PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
       }
     }  
@@ -136,6 +174,7 @@ void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std
       if(removed_node_ids.find(r) != removed_node_ids.end()){
         PS_VLOG(1) << "Process:" << getpid() << " Skipping sending UPDATE_ENV_VAR msg to " \
         "node id:" << r << " as this node is going to be removed";
+        // TODO send terminate command
         continue;
       }
       req.meta.recver = recver_id;
@@ -173,12 +212,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     // init node info.
     for (int i = 0; i < num_workers_; ++i) {
       int id = WorkerRankToID(i);
-      for (int g : {id, kWorkerGroup, kWorkerGroup + kServerGroup,
-                    kWorkerGroup + kScheduler,
-                    kWorkerGroup + kServerGroup + kScheduler}) {
-        node_ids_[g].push_back(id);
-        PS_VLOG(1) << "Process:" << getpid() << " pushed worker id: " << id << " to group :" << g;
-      }
+      addWorkerNodeIdToGroups(id);
     }
 
     for (int i = 0; i < num_servers_; ++i) {
@@ -186,14 +220,14 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
       for (int g : {id, kServerGroup, kWorkerGroup + kServerGroup,
                     kServerGroup + kScheduler,
                     kWorkerGroup + kServerGroup + kScheduler}) {
-        node_ids_[g].push_back(id);
+        node_ids_[g].insert(id);
         PS_VLOG(1) << "Process:" << getpid() << " pushed server id: " << id << " to group :" << g;
       }
     }
 
     for (int g : {kScheduler, kScheduler + kServerGroup + kWorkerGroup,
                   kScheduler + kWorkerGroup, kScheduler + kServerGroup}) {
-      node_ids_[g].push_back(kScheduler);
+      node_ids_[g].insert(kScheduler);
       PS_VLOG(1) << "Process:" << getpid() << " pushed scheduler id: " << kScheduler << " to group :" << g;
 
     }
