@@ -117,7 +117,6 @@ class Van {
 
     virtual void DropSender(const std::unordered_set<int>& ids) = 0;
     virtual bool IsSenderIdValid(int sender_id) = 0;
-    virtual std::unordered_set<int> getNodeIds(const std::vector<std::string>& senders) = 0;
 
     void SendResponseToGroup(int group, int max_receiver_id, int custId, int appId, Control::Command c);
 
