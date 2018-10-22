@@ -154,18 +154,7 @@ class ZMQVan : public Van {
   bool IsSenderIdValid(int sender_id) override {
     return senders_.find(sender_id) != senders_.end();
   }
-
-  std::unordered_set<int> getNodeIds(const std::vector<std::string>& senders) override {
-    std::unordered_set<int> ids;
-    for(auto sender : senders){
-      auto it = senders_ip_port_.find(sender);
-      if(it != senders_ip_port_.end()){
-        ids.insert(it->second.first);
-      }
-    }
-    return ids;
-  }
-
+  
   int SendMsg(const Message& msg) override {
     std::lock_guard<std::mutex> lk(mu_);
     // find the socket
