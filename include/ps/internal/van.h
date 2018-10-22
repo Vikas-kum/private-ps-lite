@@ -59,7 +59,7 @@ class Van {
     int Send(const Message &msg);
 
     void DropSenderHosts(const std::unordered_set<int>& drop_senders);
-    std::unordered_set<int> GetNodeIdSet(const std::vector<std::string>& senders);
+    std::unordered_set<int> GetNodeIdSet(const std::unordered_set<std::string>& senders);
 
     /**
      * \brief return my node

@@ -71,9 +71,10 @@ void Postoffice::syncWorkerNodeIdsGroup(std::set<int> workerIds){
 void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids, Meta* nodes){
   int prev_num_worker = num_workers_;
   num_workers_ = atoi(val);
-  PS_VLOG(1) << "Process:" << getpid() << " Updated num workers from :" << prev_num_worker << " to " << num_workers_;
+  PS_VLOG(1) << "Process:" << getpid() << " Updating num workers from :" << prev_num_worker << " to " << num_workers_;
   // init node info.
   if(removed_node_ids.size() > 0) {
+
     CHECK_GT(prev_num_worker, num_workers_);
     van_->DropSenderHosts(removed_node_ids);
     
@@ -121,11 +122,11 @@ void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>&
 };
 
 std::unordered_set<int> Postoffice::parseRemovedNodeStringAndGetIds(const std::string& data){
-  std::vector<std::string> removed_hosts;
+  std::unordered_set<std::string> removed_hosts;
   std::istringstream iss(data);
   std::string token;
   while (std::getline(iss, token, ',')){
-    removed_hosts.push_back(token);
+    removed_hosts.insert(token);
     PS_VLOG(1) << " Removing host:" << token;
   }
   return van_->GetNodeIdSet(removed_hosts);

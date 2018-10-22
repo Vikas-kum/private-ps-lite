@@ -556,8 +556,18 @@ int Van::GetMyRank(){
   throw std::runtime_error("Couldn't find my id in registered worker or server nodes");
 }
 
-std::unordered_set<int> Van::GetNodeIdSet(const std::vector<std::string>& senders){
-  return getNodeIds(senders);
+std::unordered_set<int> Van::GetNodeIdSet(const std::unordered_set<std::string>& senders){
+  std::unordered_set<int> node_ids;
+  for(auto it = connected_nodes_.begin(); it != connected_nodes_.end(); it++){
+    std::size_t found = it->first.rfind(':');
+    std::string hostIp = it->first.substr(0, found);
+    PS_VLOG(1) << "Pid:" << getpid() << " connected node:" << it->first<< " host Ip:" << hostIp;
+    if(senders.find(hostIp) != senders.end()){
+      PS_VLOG(1) << "Adding node id:" << it->second << " to return list.";
+      node_ids.insert(it->second);
+    }
+  }
+  return node_ids;
 }
 
 void Van::Receiving() {
