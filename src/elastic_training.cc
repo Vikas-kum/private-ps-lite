@@ -22,9 +22,6 @@ ETDefaultNodeManager::ETDefaultNodeManager() {
   getCurrentWorkerSet();
 };
 
- /**
-   * \brief launches training script on new worker node
-   */
 void ETNodeManager::launchCommandOnNewWorker(const std::string& worker_ip, const std::vector<std::pair<std::string, std::string> >& env) {
   PS_VLOG(1) << "Process:" << getpid() << " Launching command on new worker";
     // TODO use libssh, that will help redirect the output to logfile
@@ -45,8 +42,7 @@ void ETNodeManager::launchCommandOnNewWorker(const std::string& worker_ip, const
   if(itf) {
       cmd += " --env DMLC_INTERFACE:" + std::string(itf);
   }
-  //TODO PORT
-  //TODO get all env from scheduler copied to worker
+  // TODO get all env from scheduler copied to worker
 
   for(auto entry: env){
     cmd += " --env ";
@@ -91,9 +87,6 @@ void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std:
     // launch ssh script on new machine with extra parameters
     launchCommandOnNewWorker(new_worker_host, env);
   }
-  
-  // TODO for worker removed, may be remove connections from scheduler,
-  // Need to remove nodes from node group
   getCurrentWorkerSet();
   workers_added_.clear();
   workers_removed_.clear();
@@ -103,7 +96,7 @@ void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std:
 void ETDefaultNodeManager::findMembershipChanges(){
   const char *host_file = NULL;
   host_file = CHECK_NOTNULL(Environment::Get()->find("WORKER_HOST_FILE"));
-  PS_VLOG(1) << " In find membership changes: Sleeping for 0 seconds for debugging";
+  PS_VLOG(1) << " In find membership changes";
   std::ifstream ff(host_file, std::ifstream::in);
   std::string worker;
   std::unordered_set<std::string> cur_workers;
@@ -122,7 +115,5 @@ void ETDefaultNodeManager::findMembershipChanges(){
       PS_VLOG(1) << "Worker removed:" << p;
     }
   }
-//  PS_VLOG(1) << "In findmembership changes";
- // workers_added_.push_back("127.0.0.1");
 };
 }

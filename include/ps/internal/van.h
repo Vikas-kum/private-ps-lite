@@ -50,15 +50,20 @@ class Van {
      */
     virtual void Start(int customer_id);
 
-    virtual void ProcessUpdateEnvVariable(Message* msg, Meta* nodes);
-
     /**
      * \brief send a message, It is thread-safe
      * \return the number of bytes sent. -1 if failed
      */
     int Send(const Message &msg);
 
+    /**
+     * \brief This method takes care of all the cleanup needed when some node id is removed
+     */
     void DropSenderHosts(const std::unordered_set<int>& drop_senders);
+
+    /**
+     * \brief This method gets set of NodeIds corresponding to given hostIps
+     */
     std::unordered_set<int> GetNodeIdSet(const std::unordered_set<std::string>& senders);
 
     /**
@@ -69,6 +74,9 @@ class Van {
       return my_node_;
     }
 
+    /**
+     * This returns total number of workers seen so far by van, this is always increasing.
+     */
     int TotalWorkerSeen() { return num_workers_; }
 
     /**
@@ -116,10 +124,17 @@ class Van {
     virtual int SendMsg(const Message &msg) = 0;
 
     virtual void DropSender(const std::unordered_set<int>& ids) = 0;
+
+    /**
+     * \brief this checks if message sender is valid registered sender.
+     */
     virtual bool IsSenderIdValid(int sender_id) = 0;
 
+    /**
+     * \brief This will send response control message to given group, and only send to receivers
+     * whose id less than max_receiver_id 
+     */
     void SendResponseToGroup(int group, int max_receiver_id, int custId, int appId, Control::Command c);
-
 
     /**
      * \brief pack meta into a string
@@ -201,6 +216,11 @@ class Van {
      * \brief processing logic of Data message
      */
     void ProcessDataMsg(Message* msg);
+
+    /**
+     * \brief processing logic of updating env variable
+     */
+    virtual void ProcessUpdateEnvVariable(Message* msg, Meta* nodes);
 
     /**
      * \brief called by ProcessAddNodeCommand, in scheduler it assigns an id to the

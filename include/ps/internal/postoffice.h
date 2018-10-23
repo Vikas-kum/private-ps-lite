@@ -181,12 +181,17 @@ class Postoffice {
    */
   std::vector<int> GetDeadNodes(int t = 60);
 
-  /*
-   update variables in memory which corresponds to environment variables
-   // currently supported num_worker, num_server, num_scheduler
-  */
+  /**
+   * \brief update variables in memory which corresponds to env_var
+   * currently supported num_worker
+   */
   void updateEnvironmentVariable(const std::string& env_var, const std::string& val, const std::string& data, Meta* nodes);
   void notifyUpdateEnvReceived();
+  /**
+   * This will sync node_ids_ map with current workerIds.
+   * if node_ids_ group has a worker which is not in workerIds, those worker will be removed from map
+   * It will add the worker ids to their corresponding group if it is not in the map
+  */
   void syncWorkerNodeIdsGroup(std::set<int> workerIds);
 
  private:
@@ -194,9 +199,12 @@ class Postoffice {
   ~Postoffice() { delete van_; }
 
   void InitEnvironment();
+
   void updateNumWorker(const char* val, const std::unordered_set<int>& removed_node_ids, Meta* nodes);
   void addWorkerNodeIdToGroups(int id);
-
+  /**
+   * This parses string data which is , separated to set of hostIps
+   */
   std::unordered_set<int> parseRemovedNodeStringAndGetIds(const std::string& data);
 
   Van* van_;

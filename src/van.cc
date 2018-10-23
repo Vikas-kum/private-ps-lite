@@ -36,7 +36,6 @@ void Van::ProcessTerminateCommand() {
 }
 
 void Van::ProcessUpdateEnvVariable(Message* msg,  Meta* nodes){
-  //TODO Vikas
   if(msg->meta.request){
     // call Update EnvVariable
     std::string env_var = std::string(msg->data[0].data());
@@ -45,7 +44,6 @@ void Van::ProcessUpdateEnvVariable(Message* msg,  Meta* nodes){
     std::string data;
     if(msg->data.size() > 2) {
       data = std::string(msg->data[2].data());
-      // parse string to create a unordered set
     }
     PS_VLOG(1) << "Pid:" << getpid() << " ProcessUpdate Got env_var:" << env_var <<
     " value: "<< val ; 
@@ -62,14 +60,11 @@ void Van::ProcessUpdateEnvVariable(Message* msg,  Meta* nodes){
     // send back ack
     Send(update_env_ack);
   } else {
-    // Not myNode.role() is server somehow, ??? CHECK
     CHECK_EQ(Postoffice::Get()->is_scheduler(), 1) << " UpdateEnv Response received is expected on scheduler. My role is:" << my_node().role << " Process:"<<getpid();
-    // TODO notify the thread waiting on cond variable
     PS_VLOG(1) << "Process:" << getpid() << " Notifying Scheduler for repsonse";
     Postoffice::Get()->notifyUpdateEnvReceived(); 
     PS_VLOG(1) << "Process:" << getpid() << " Scheduler sent messages for repsonse";  
   }
-  // else
 }
 
 void Van::RemoveNodeId(const std::unordered_set<int>& removed_node_ids){
@@ -77,10 +72,10 @@ void Van::RemoveNodeId(const std::unordered_set<int>& removed_node_ids){
   for(auto id: removed_node_ids){
     if(worker_node_.find(id) != worker_node_.end()){
       worker_node_.erase(id);
-      LOG(INFO) << "Pid:" << getpid() << " Removed node id :" << id << " from worker-list";
+      PS_VLOG(1) << "Pid:" << getpid() << " Removed node id :" << id << " from worker-list";
     } else if (server_node_.find(id) != server_node_.end()){
       server_node_.erase(id);
-      LOG(INFO) << "Pid:" << getpid() << " Removed node id :" << id << " from server-list";
+      PS_VLOG(1) << "Pid:" << getpid() << " Removed node id :" << id << " from server-list";
     }
   }
 
@@ -88,8 +83,8 @@ void Van::RemoveNodeId(const std::unordered_set<int>& removed_node_ids){
   auto it = connected_nodes_.begin();
   while(it != connected_nodes_.end()){
     if(removed_node_ids.find((*it).second) != removed_node_ids.end()){
-      LOG(INFO) << " Process: " << getpid() << " Host:" << (*it).first;
-      LOG(INFO) << " Process: " << getpid() << " dropping node id " << (*it).second << " from connected nodes";
+      PS_VLOG(1) << " Process: " << getpid() << " Host:" << (*it).first;
+      PS_VLOG(1) << " Process: " << getpid() << " dropping node id " << (*it).second << " from connected nodes";
       it = connected_nodes_.erase(it);
     } else {
       it++;
@@ -127,10 +122,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
         Connect(node);
         Postoffice::Get()->UpdateHeartbeat(node.id, t);
         connected_nodes_[node_host_ip] = id;
-        // TODO Vikas if is_new_node, then execute, check 
-
-      } // TODO Vikas else if node.id is not empty is new_node=false
-      else if(had_empty_node_id){
+      } else if(had_empty_node_id){
         int id = node.role == Node::SERVER ?
                  Postoffice::ServerRankToID(num_servers_) :
                  Postoffice::WorkerRankToID(num_workers_);
@@ -148,7 +140,7 @@ void Van::ProcessAddNodeCommandAtScheduler(
       }
     }
     Postoffice::Get()->syncWorkerNodeIdsGroup(worker_node_);
-    // TODO , my_node(scheduler should not be pushed if it is already there)
+    // my_node(scheduler should not be pushed if it is already there)
     if(is_scheduler_added == 0) {
       nodes->control.node.push_back(my_node_);
       is_scheduler_added = 1;
@@ -160,14 +152,13 @@ void Van::ProcessAddNodeCommandAtScheduler(
       int recver_id = r;
       if (shared_node_mapping_.find(r) == shared_node_mapping_.end()) {
         PS_VLOG(1) << "Sending add node back to recvr :" << r;
-
         back.meta.recver = recver_id;
         back.meta.timestamp = timestamp_++;
         Send(back);
       }
     }
     PS_VLOG(1) << "the scheduler is connected to "
-               << num_workers_ << " workers and " << num_servers_ << " servers";
+               << worker_node_.size() << " workers and " << server_node_.size() << " servers";
     ready_ = true;
   } else if (!recovery_nodes->control.node.empty()) {
     auto dead_nodes = Postoffice::Get()->GetDeadNodes(heartbeat_timeout_);
@@ -201,14 +192,14 @@ void Van::UpdateLocalID(Message* msg, std::unordered_set<int>* deadnodes_set,
   if (msg->meta.sender == Meta::kEmpty) {
     CHECK(is_scheduler_);
     CHECK_EQ(ctrl.node.size(), 1);
-    LOG(INFO) << " VIKAS UpdateLocalId sender is empty, node->control size:" << nodes->control.node.size();
+    PS_VLOG(1) << "Pid:" << getpid() << " UpdateLocalId sender is empty, node->control size:" << nodes->control.node.size();
     if (nodes->control.node.size() < num_nodes + is_scheduler_added) {
       nodes->control.node.push_back(ctrl.node[0]);
-      LOG(INFO) << " Adding node to scheduler nodes:" << ctrl.node[0].DebugString();
+      PS_VLOG(1) << "Pid:" << getpid() << " Adding node to scheduler nodes:" << ctrl.node[0].DebugString();
     } else {
       // some node dies and restarts
       CHECK(ready_.load());
-      PS_VLOG(1) << " Not adding node to scheduler nodes";
+      PS_VLOG(1) << " Not adding node to scheduler nodes. Probably some node died and restarted.";
       for (size_t i = 0; i < nodes->control.node.size() - 1; ++i) {
         const auto& node = nodes->control.node[i];
         if (deadnodes_set->find(node.id) != deadnodes_set->end() &&
@@ -275,10 +266,6 @@ void Van::ProcessBarrierCommand(Message* msg, Meta* nodes) {
     if (barrier_count_[group] ==
         static_cast<int>(Postoffice::Get()->GetNodeIDs(group).size())) {
       barrier_count_[group] = 0;
-     
-      
-      // Tif control.cmd == MEMBERSHIPCHANGE_BARRIER
-      // ETManager.invokeMembershipChange() --> Add/removes node
       if(ctrl.cmd == Control::Command::MEMBERSHIP_CHANGE_BARRIER){
          // call Update EnvVariable
         int max_receiver_id = INT_MIN;
@@ -334,7 +321,7 @@ void Van::ProcessDataMsg(Message* msg) {
   CHECK_NE(msg->meta.app_id, Meta::kEmpty);
   // TODO check only if 
   if(ready_ && ps::Postoffice::Get()->removed_hosts() && !IsSenderIdValid(msg->meta.sender)){
-    PS_VLOG(1) << " Message came from invalid sender id:" << msg->meta.sender << " Dropping message.";
+    PS_VLOG(1) << "Pid:" << getpid() <<  " Message came from invalid sender id:" << msg->meta.sender << " Dropping message.";
     return;
   }
 
@@ -358,18 +345,13 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
   } else {
     for (const auto& node : ctrl.node) {
       std::string addr_str = node.hostname + ":" + std::to_string(node.port);
-      PS_VLOG(1) << "pid:" << getpid() <<" Got node:" << addr_str << " to connect to";
+      PS_VLOG(1) << "Pid:" << getpid() <<" Got node:" << addr_str << " to connect to";
       if (connected_nodes_.find(addr_str) == connected_nodes_.end()) {
         Connect(node);
         connected_nodes_[addr_str] = node.id;
         if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
         if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
-      } else {
-        //is new_node = false
       }
-      // check how to increment below 2
-     // if (!node.is_recovery && node.role == Node::SERVER) ++num_servers_;
-     // if (!node.is_recovery && node.role == Node::WORKER) ++num_workers_;
       if(node.role == Node::WORKER){
         worker_node_.insert(node.id);
       } else if (node.role == Node::SERVER){
@@ -377,12 +359,12 @@ void Van::ProcessAddNodeCommand(Message* msg, Meta* nodes, Meta* recovery_nodes)
       }
     }
     Postoffice::Get()->syncWorkerNodeIdsGroup(worker_node_);
-    PS_VLOG(1) << "pid: " << getpid() << " " << my_node_.ShortDebugString() << " is connected to others";
+    PS_VLOG(1) << "Pid: " << getpid() << " " << my_node_.ShortDebugString() << " is connected to others";
     for(auto id: worker_node_){
-      LOG(INFO) << "pid: " << getpid() << " Worker node Id: " << id;
+      PS_VLOG(1) << "Pid: " << getpid() << " Worker node Id: " << id;
     }
     for(auto id: server_node_) {
-      LOG(INFO) << "pid: " << getpid() << " Server node id" << id;
+      PS_VLOG(1) << "Pid: " << getpid() << " Server node id" << id;
     }
     ready_ = true;
   }
@@ -541,14 +523,14 @@ int Van::GetMyRank(){
   } else if (my_role == Node::WORKER) {
      auto itr = worker_node_.find(my_node_.id);
      if(itr == worker_node_.end()){
-       LOG(FATAL) << "Couldn't find my worker id:" << my_node_.id << " in registered worker nodes"; 
+       PS_VLOG(1) << "Couldn't find my worker id:" << my_node_.id << " in registered worker nodes";
      } else {
        return std::distance(worker_node_.begin(), itr);
      }
   } else {
     auto itr = server_node_.find(my_node_.id);
      if(itr == server_node_.end()){
-       LOG(FATAL) << "Couldn't find my server id:" << my_node_.id << " in registered server nodes"; 
+       PS_VLOG(1) << "Couldn't find my server id:" << my_node_.id << " in registered server nodes";
      } else {
        return std::distance(server_node_.begin(), itr);
      }
@@ -574,15 +556,10 @@ void Van::Receiving() {
   Meta nodes;
   Meta recovery_nodes;  // store recovery nodes
   recovery_nodes.control.cmd = Control::ADD_NODE;
- // PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
-
 
   while (true) {
     Message msg;
-    //PS_VLOG(1) << "Process:"<<getpid() << " receiving message:"; 
-
     int recv_bytes = RecvMsg(&msg);
-    //PS_VLOG(1) << "Process:"<<getpid() << " received message:" << msg.DebugString(); 
     // For debug, drop received message
     if (ready_.load() && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;
@@ -659,7 +636,6 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
       p->set_customer_id(n.customer_id);
     }
   }
-
   // to string
   *buf_size = pb.ByteSize();
   *meta_buf = new char[*buf_size+1];

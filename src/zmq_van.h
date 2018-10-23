@@ -146,7 +146,7 @@ class ZMQVan : public Van {
       if(it != senders_.end()){
          PS_VLOG(1) << "Proc:" << getpid() << " Dropping senderid:" << id; 
          senders_.erase(it);
-        //TODO do we need to close socket connection to sender explicitly or is it RAII ?? 
+        // TODO do we need to close socket connection to sender explicitly or is it RAII ??
       }
     } 
   }
@@ -154,7 +154,7 @@ class ZMQVan : public Van {
   bool IsSenderIdValid(int sender_id) override {
     return senders_.find(sender_id) != senders_.end();
   }
-  
+
   int SendMsg(const Message& msg) override {
     std::lock_guard<std::mutex> lk(mu_);
     // find the socket

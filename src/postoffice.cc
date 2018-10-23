@@ -72,9 +72,7 @@ void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>&
   int prev_num_worker = num_workers_;
   num_workers_ = atoi(val);
   PS_VLOG(1) << "Process:" << getpid() << " Updating num workers from :" << prev_num_worker << " to " << num_workers_;
-  // init node info.
   if(removed_node_ids.size() > 0) {
-
     CHECK_GT(prev_num_worker, num_workers_);
     van_->DropSenderHosts(removed_node_ids);
     
@@ -83,7 +81,6 @@ void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>&
                     kWorkerGroup + kServerGroup + kScheduler}) {
       auto it = node_ids_[g].begin();
       while(it != node_ids_[g].end()){
-        // if *it in removed_node_ids 
         if(removed_node_ids.find(*it) != removed_node_ids.end()){
           PS_VLOG(1) << " Erasing node id:" << *it << " from group:" << g;
           it = node_ids_[g].erase(it);
@@ -98,7 +95,7 @@ void Postoffice::updateNumWorker(const char* val, const std::unordered_set<int>&
     auto it = nodes->control.node.begin();
     while(it != nodes->control.node.end()){
       if(removed_node_ids.find((*it).id) != removed_node_ids.end()){
-        LOG(INFO) << " Erasing node id:" << (*it).id << " from nodes, pid:" << getpid();
+        PS_VLOG(1) << " Erasing node id:" << (*it).id << " from nodes, pid:" << getpid();
         it = nodes->control.node.erase(it);
       } else {
         it++;
@@ -171,7 +168,7 @@ void Postoffice::updateEnvironmentVariable(const std::string& env_var, const std
     PS_VLOG(1) << "Process:" << getpid() << " In scheduler sending message to others";
     for (int r : GetNodeIDs(kWorkerGroup + kServerGroup)) {
       int recver_id = r;
-      // TODO do not send request to nodes that are going to be removed 
+      // do not send request to nodes that are going to be removed
       if(removed_node_ids.find(r) != removed_node_ids.end()){
         PS_VLOG(1) << "Process:" << getpid() << " Skipping sending UPDATE_ENV_VAR msg to " \
         "node id:" << r << " as this node is going to be removed";
@@ -251,7 +248,7 @@ void Postoffice::Start(int customer_id, const char* argv0, const bool do_barrier
     const char* instance_pool = NULL;
     instance_pool = CHECK_NOTNULL(Environment::Get()->find("INSTANCE_POOL"));
     if(strcmp(instance_pool, "DEFAULT") == 0) {
-      LOG(INFO) << "Creating et_node_manager";
+      PS_VLOG(1) << "Creating et_node_manager";
       et_node_manager_ = std::make_shared<ETDefaultNodeManager>();
     } else {
       PS_VLOG(1) << "FATAL unknown instance pool";
