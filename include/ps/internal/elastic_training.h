@@ -45,6 +45,7 @@ class ETDefaultNodeManager: public ETNodeManager {
     std::unordered_set<std::string> workers_;
     std::vector<std::string> workers_added_, workers_removed_;
     std::function<void()> on_success_resp_cb_;
+    uint log_segnum;
 };
 
 

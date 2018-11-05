@@ -20,6 +20,7 @@ void ETDefaultNodeManager::getCurrentWorkerSet() {
 
 ETDefaultNodeManager::ETDefaultNodeManager() {
   getCurrentWorkerSet();
+  log_segnum = 0;
 };
 
 void ETNodeManager::launchCommandOnNewWorker(const std::string& worker_ip, const std::vector<std::pair<std::string, std::string> >& env) {
@@ -87,9 +88,47 @@ void ETDefaultNodeManager::OnSuccessUpdatingEnv(const std::vector<std::pair<std:
     // launch ssh script on new machine with extra parameters
     launchCommandOnNewWorker(new_worker_host, env);
   }
-  getCurrentWorkerSet();
-  workers_added_.clear();
+  /* if worker was removed then we update the workers list accrodingly
+     Worker removal takes priority over worker addition
+     In case worker_host file, one of the worker get substituted by another worker,
+     in first iteration the worker which was removed will be removed first, in next epoch new
+     substituted worker will be added.
+     For ex: if host file contains:
+     A
+     B
+     C
+    and it changes to
+     A
+     B
+     D
+
+     first C will be removed, and worker_ set will contain A,B
+     In next epoch D will be added, and worker set will contain A,B,D
+  */
+  const char *host_file = NULL;
+  host_file = CHECK_NOTNULL(Environment::Get()->find("WORKER_HOST_FILE"));
+  std::string host_file_log = std::string(host_file) + "_log";
+  std::ofstream worker_host_log_file;
+  worker_host_log_file.open(host_file_log, std::ios_base::app);
+  if(workers_removed_.size() > 0){
+    for(auto wid : workers_removed_) {
+      workers_.erase(wid);
+      // add a log line to worker_host_log file
+      worker_host_log_file << log_segnum++ << " REMOVED " << wid << " " << std::chrono::system_clock::now().time_since_epoch().count() << "\n";
+    }
+  } else if(workers_added_.size() > 0){
+    for(auto wid : workers_added_){
+      workers_.insert(wid);
+      // add a log line to worker_host_log file
+      // SEQNUM ADDED IP Time
+      worker_host_log_file << log_segnum++ <<" ADDED " << wid << " " << std::chrono::system_clock::now().time_since_epoch().count() << "\n";
+    }
+  }
+  for(auto w : workers_){
+    PS_VLOG(1) << "Current Worker:" << w;
+  }
   workers_removed_.clear();
+  workers_added_.clear();
   res_cb();
 }
 
